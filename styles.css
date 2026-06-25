@@ -517,6 +517,30 @@ input[type="file"] {
   min-height: 38px;
 }
 
+.pdf-import-box {
+  border: 1px dashed var(--primary);
+  border-radius: 10px;
+  padding: 14px;
+  background: color-mix(in srgb, var(--primary) 7%, white);
+}
+
+.pdf-import-box details {
+  margin-top: 8px;
+}
+
+.pdf-import-box summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--primary);
+  font-size: 12px;
+}
+
+.pdf-import-box textarea[readonly] {
+  min-height: 120px;
+  margin-top: 8px;
+  background: #f8fbff;
+}
+
 .btn-row {
   display: flex;
   gap: 10px;
