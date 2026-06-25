@@ -676,7 +676,7 @@ function renderScheduleForm() {
           <div class="field"><label>Tipo do dia</label><select name="dayType"><option value="workday">Dia util</option><option value="saturday">Sabado</option><option value="sunday">Domingo</option><option value="holiday">Feriado</option></select></div>
           <div class="field"><label>Projeto</label><input name="project" value="${esc(data.settings.project)}" required></div>
           <div class="field"><label>Contratada</label><input name="contractor" value="${esc(data.settings.contractor)}" required></div>
-          <div class="field full"><label>Justificativa</label><textarea name="reason" required placeholder="Descreva o motivo da hora extra"></textarea></div>
+          <div class="field full"><label>Justificativa${isRetroMode ? " (opcional)" : ""}</label><textarea name="reason" ${isRetroMode ? "" : "required"} placeholder="${isRetroMode ? "Opcional para lancamento retroativo" : "Descreva o motivo da hora extra"}"></textarea></div>
           ${isRetroMode ? `
             <div class="field full pdf-import-box">
               <label>PDF da aprovacao retroativa</label>
