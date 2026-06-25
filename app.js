@@ -366,6 +366,9 @@ function bindViewEvents(user) {
   document.querySelectorAll("[data-nav-icon-file]").forEach((el) => {
     el.addEventListener("change", () => handleInlineFile(el, '[name="navIcon"]', "[data-nav-item-row]"));
   });
+  document.querySelectorAll("[data-pdf-retro]").forEach((el) => {
+    el.addEventListener("change", () => handleRetroPdf(el));
+  });
 }
 
 function renderDashboard() {
@@ -674,6 +677,18 @@ function renderScheduleForm() {
           <div class="field"><label>Projeto</label><input name="project" value="${esc(data.settings.project)}" required></div>
           <div class="field"><label>Contratada</label><input name="contractor" value="${esc(data.settings.contractor)}" required></div>
           <div class="field full"><label>Justificativa</label><textarea name="reason" required placeholder="Descreva o motivo da hora extra"></textarea></div>
+          ${isRetroMode ? `
+            <div class="field full pdf-import-box">
+              <label>PDF da aprovacao retroativa</label>
+              <input type="file" accept="application/pdf,.pdf" data-pdf-retro>
+              <input type="hidden" name="pdfSource" value="">
+              <p class="muted" data-pdf-status>Insira o PDF para o app tentar puxar data, funcionario, funcao e horarios automaticamente.</p>
+              <details>
+                <summary>Texto encontrado no PDF</summary>
+                <textarea name="pdfExtractedText" readonly placeholder="Depois de inserir o PDF, o texto encontrado aparece aqui."></textarea>
+              </details>
+            </div>
+          ` : ""}
           <div class="field full"><label>Anexo opcional</label><input name="attachment" placeholder="Cole aqui o nome ou link do print do e-mail"></div>
         </div>
       </section>
@@ -1034,6 +1049,132 @@ function handleInlineFile(inputEl, targetSelector, rowSelector) {
   reader.readAsDataURL(file);
 }
 
+async function handleRetroPdf(inputEl) {
+  const file = inputEl.files?.[0];
+  if (!file) return;
+  const form = inputEl.closest("form");
+  const status = form?.querySelector("[data-pdf-status]");
+  const setStatus = (message) => {
+    if (status) status.textContent = message;
+  };
+  setStatus("Lendo PDF...");
+  try {
+    const text = await extractPdfText(file);
+    const cleanText = text.replace(/\s+/g, " ").trim();
+    const extracted = form.querySelector('[name="pdfExtractedText"]');
+    const source = form.querySelector('[name="pdfSource"]');
+    const attachment = form.querySelector('[name="attachment"]');
+    if (extracted) extracted.value = cleanText || "Nao foi possivel encontrar texto no PDF.";
+    if (source) source.value = file.name;
+    if (attachment && !attachment.value) attachment.value = `PDF: ${file.name}`;
+    if (!cleanText) {
+      setStatus("PDF anexado, mas sem texto legivel. Se for escaneado como imagem, preencha manualmente.");
+      return;
+    }
+    const parsed = parseRetroPdfText(cleanText);
+    applyRetroPdfData(form, parsed);
+    const found = [];
+    if (parsed.date) found.push("data");
+    if (parsed.employees.length) found.push(`${parsed.employees.length} funcionario(s)`);
+    if (parsed.functionName) found.push("funcao");
+    if (parsed.times.length) found.push("horarios");
+    setStatus(found.length ? `PDF lido. Dados preenchidos: ${found.join(", ")}.` : "PDF lido, mas nao encontrei campos conhecidos. Confira o texto extraido.");
+    showToast(found.length ? "Informacoes do PDF aplicadas ao lancamento." : "PDF lido. Confira o texto extraido.");
+  } catch (error) {
+    setStatus("Nao consegui ler esse PDF automaticamente. Tente outro PDF com texto selecionavel.");
+    showToast("Nao foi possivel puxar dados do PDF.");
+  }
+}
+
+async function extractPdfText(file) {
+  const buffer = await file.arrayBuffer();
+  if (window.pdfjsLib) {
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    const pdf = await window.pdfjsLib.getDocument({ data: buffer }).promise;
+    const pages = [];
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+      const page = await pdf.getPage(pageNumber);
+      const content = await page.getTextContent();
+      pages.push(content.items.map((item) => item.str).join(" "));
+    }
+    return pages.join("\n");
+  }
+  return fallbackPdfText(buffer);
+}
+
+function fallbackPdfText(buffer) {
+  const raw = new TextDecoder("latin1").decode(buffer);
+  return raw
+    .replace(/\\[()\\]/g, " ")
+    .replace(/[^\x20-\x7EÀ-ÿ\n]/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function parseRetroPdfText(text) {
+  const normalized = normalizeText(text);
+  const employees = data.employees
+    .filter((employee) => employee.active && normalized.includes(normalizeText(employee.name)))
+    .map((employee) => employee.name);
+  const functionName = data.functions
+    .filter((item) => item.active)
+    .find((item) => normalized.includes(normalizeText(item.name)))?.name || "";
+  const dateMatch = text.match(/\b(\d{1,2})[\/.-](\d{1,2})[\/.-](20\d{2})\b/) || text.match(/\b(20\d{2})-(\d{1,2})-(\d{1,2})\b/);
+  const date = dateMatch ? normalizeDateMatch(dateMatch) : "";
+  const times = [...text.matchAll(/\b([01]?\d|2[0-3])[:h]([0-5]\d)\b/gi)]
+    .map((match) => `${String(match[1]).padStart(2, "0")}:${match[2]}`)
+    .filter((time, index, list) => list.indexOf(time) === index);
+  let dayType = "";
+  if (normalized.includes("feriado")) dayType = "holiday";
+  else if (normalized.includes("domingo")) dayType = "sunday";
+  else if (normalized.includes("sabado")) dayType = "saturday";
+  else if (normalized.includes("dia util") || normalized.includes("segunda") || normalized.includes("terca") || normalized.includes("quarta") || normalized.includes("quinta") || normalized.includes("sexta")) dayType = "workday";
+  return { date, employees, functionName, times, dayType };
+}
+
+function normalizeDateMatch(match) {
+  if (match[1].length === 4) {
+    return `${match[1]}-${String(match[2]).padStart(2, "0")}-${String(match[3]).padStart(2, "0")}`;
+  }
+  return `${match[3]}-${String(match[2]).padStart(2, "0")}-${String(match[1]).padStart(2, "0")}`;
+}
+
+function applyRetroPdfData(form, parsed) {
+  if (parsed.date) form.querySelector('[name="date"]').value = parsed.date;
+  if (parsed.dayType) form.querySelector('[name="dayType"]').value = parsed.dayType;
+  const employees = parsed.employees.length ? parsed.employees : [""];
+  const wrap = form.querySelector("#employeeBlocks");
+  while (wrap.children.length < employees.length) {
+    wrap.insertAdjacentHTML("beforeend", employeeBlock(wrap.children.length, options(data.employees.filter((e) => e.active), "name"), options(data.functions.filter((f) => f.active), "name")));
+  }
+  [...wrap.children].forEach((block, index) => {
+    if (employees[index]) setSelectValue(block.querySelector('[name="employeeName"]'), employees[index]);
+    if (parsed.functionName) setSelectValue(block.querySelector('[name="functionName"]'), parsed.functionName);
+    applyTimesToBlock(block, parsed.times);
+  });
+}
+
+function applyTimesToBlock(block, times) {
+  if (!times.length) return;
+  const fields = ["start", "breakStart", "breakEnd", "end"];
+  const values = times.length >= 4 ? times.slice(0, 4) : [times[0], "", "", times[times.length - 1]];
+  fields.forEach((name, index) => {
+    if (values[index]) block.querySelector(`[name="${name}"]`).value = values[index];
+  });
+}
+
+function setSelectValue(select, value) {
+  if (!select || !value) return;
+  const found = [...select.options].find((option) => normalizeText(option.value) === normalizeText(value));
+  if (found) select.value = found.value;
+}
+
+function normalizeText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
 function renderDashboardCardRows() {
   return (data.settings.dashboardCards || [])
     .slice()
@@ -1228,6 +1369,8 @@ function saveSchedule(form, fd, submitType) {
     dayType,
     reason: fd.get("reason"),
     attachment: fd.get("attachment"),
+    pdfSource: fd.get("pdfSource") || "",
+    pdfExtractedText: fd.get("pdfExtractedText") || "",
     retroactive,
     createdAt: new Date().toISOString(),
     createdBy: currentUser().name,
