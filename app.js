@@ -76,21 +76,7 @@ const defaultData = {
     { id: uid(), name: "Jeferson", email: "jeferson@empresa.com", password: "123456", role: "jeferson", active: true },
     { id: uid(), name: "Visualizador", email: "viewer@empresa.com", password: "123456", role: "viewer", active: true }
   ],
-  employees: [
-    "Andre Lima da Silva",
-    "Bruno Jhenef dos Reis",
-    "Cleiton Vieira de Resende",
-    "David Henrique da Silva Costa",
-    "Gicele Ramos",
-    "Hudson de Souza Vilela",
-    "Iury Jesus Silva",
-    "Joao Vitor Santos Leite",
-    "Michele Alves Buril",
-    "Marllon Rodrigues Soares",
-    "Ulisses Eduardo Stanley Souza",
-    "Wanessa Cristina Dias",
-    "William Jorge Lopes Neri"
-  ].map((name) => ({ id: uid(), name, active: true })),
+  employees: employeeDefaults().map((item) => ({ id: uid(), ...item, active: true })),
   functions: [
     "Laboratorista",
     "Tecnico de Seguranca",
@@ -113,13 +99,31 @@ function uid() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-5);
 }
 
+function employeeDefaults() {
+  return [
+    { name: "Andre Lima da Silva", defaultFunction: "Laboratorista" },
+    { name: "Bruno Jhenef dos Reis", defaultFunction: "Tecnico de Seguranca" },
+    { name: "Cleiton Vieira de Resende", defaultFunction: "Tecnico de Laboratorio" },
+    { name: "David Henrique da Silva Costa", defaultFunction: "Laboratorista" },
+    { name: "Gicele Ramos", defaultFunction: "Auxiliar Administrativo" },
+    { name: "Hudson de Souza Vilela", defaultFunction: "Auxiliar de Laboratorio" },
+    { name: "Iury Jesus Silva", defaultFunction: "Auxiliar de Laboratorio" },
+    { name: "Joao Vitor Santos Leite", defaultFunction: "Auxiliar de Laboratorio" },
+    { name: "Michele Alves Buril", defaultFunction: "Auxiliar Administrativo" },
+    { name: "Marllon Rodrigues Soares", defaultFunction: "Engenheiro Geotecnico" },
+    { name: "Ulisses Eduardo Stanley Souza", defaultFunction: "Auxiliar de Laboratorio" },
+    { name: "Wanessa Cristina Dias", defaultFunction: "Motorista" },
+    { name: "William Jorge Lopes Neri", defaultFunction: "Laboratorista" }
+  ];
+}
+
 function loadData() {
   const saved = localStorage.getItem(STORAGE_KEY);
-  if (!saved) return structuredClone(defaultData);
+  if (!saved) return normalizeData(structuredClone(defaultData));
   try {
-    return mergeData(structuredClone(defaultData), JSON.parse(saved));
+    return normalizeData(mergeData(structuredClone(defaultData), JSON.parse(saved)));
   } catch {
-    return structuredClone(defaultData);
+    return normalizeData(structuredClone(defaultData));
   }
 }
 
@@ -133,6 +137,20 @@ function mergeData(base, saved) {
 
 function saveData() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+function normalizeData(value) {
+  const defaultFunctionByName = Object.fromEntries(employeeDefaults().map((item) => [normalizeText(item.name), item.defaultFunction]));
+  value.employees = (value.employees || []).map((employee) => {
+    const current = typeof employee === "string" ? { id: uid(), name: employee, active: true } : employee;
+    return {
+      id: current.id || uid(),
+      name: current.name || "",
+      defaultFunction: current.defaultFunction || defaultFunctionByName[normalizeText(current.name)] || "",
+      active: current.active !== false
+    };
+  });
+  return value;
 }
 
 function currentUser() {
@@ -368,6 +386,10 @@ function bindViewEvents(user) {
   });
   document.querySelectorAll("[data-pdf-retro]").forEach((el) => {
     el.addEventListener("change", () => handleRetroPdf(el));
+  });
+  document.querySelectorAll('[name="employeeName"]').forEach((el) => {
+    el.addEventListener("change", () => applyDefaultFunction(el));
+    applyDefaultFunction(el);
   });
 }
 
@@ -658,7 +680,7 @@ function dashboardMetricValue(card, items, today, month, year) {
 }
 
 function renderScheduleForm() {
-  const employees = options(data.employees.filter((e) => e.active), "name");
+  const employees = employeeOptions();
   const functions = options(data.functions.filter((f) => f.active), "name");
   const isRetroMode = scheduleLaunchMode === "retro";
   const today = new Date();
@@ -726,6 +748,22 @@ function employeeBlock(index, employees, functions) {
       </div>
     </div>
   `;
+}
+
+function employeeOptions() {
+  return data.employees
+    .filter((employee) => employee.active)
+    .map((employee) => `<option value="${esc(employee.name)}" data-function="${esc(employee.defaultFunction || "")}">${esc(employee.name)}</option>`)
+    .join("");
+}
+
+function applyDefaultFunction(employeeSelect) {
+  if (!employeeSelect) return;
+  const block = employeeSelect.closest("[data-employee-block]");
+  const functionSelect = block?.querySelector('[name="functionName"]');
+  const functionName = employeeSelect.selectedOptions?.[0]?.dataset.function || "";
+  if (!functionSelect || !functionName) return;
+  setSelectValue(functionSelect, functionName);
 }
 
 function renderApprovals(user) {
@@ -809,18 +847,20 @@ function renderReports() {
 }
 
 function renderCatalog(key, title, label) {
+  const isEmployeeCatalog = key === "employees";
   return `
     <div class="page-head"><div><h1>${title}</h1><p>Cadastre, edite ou desative registros.</p></div></div>
     <section class="card">
-      <form class="btn-row" data-form="catalog" data-key="${key}">
+      <form class="${isEmployeeCatalog ? "form-grid" : "btn-row"}" data-form="catalog" data-key="${key}">
         <input name="name" placeholder="${label}" required style="max-width:360px">
+        ${isEmployeeCatalog ? `<select name="defaultFunction" required>${options(data.functions.filter((f) => f.active), "name")}</select>` : ""}
         <button class="btn primary" type="submit">Cadastrar</button>
       </form>
       <div class="table-wrap" style="margin-top:16px">
         <table>
-          <thead><tr><th>Nome</th><th>Status</th><th>Acoes</th></tr></thead>
+          <thead><tr><th>Nome</th>${isEmployeeCatalog ? "<th>Funcao padrao</th>" : ""}<th>Status</th><th>Acoes</th></tr></thead>
           <tbody>
-            ${data[key].map((item) => `<tr><td>${esc(item.name)}</td><td>${item.active ? "Ativo" : "Inativo"}</td><td class="btn-row"><button class="btn" data-action="toggleCatalog" data-key="${key}" data-id="${item.id}">${item.active ? "Desativar" : "Ativar"}</button><button class="btn" data-action="editCatalog" data-key="${key}" data-id="${item.id}">Editar</button></td></tr>`).join("")}
+            ${data[key].map((item) => `<tr><td>${esc(item.name)}</td>${isEmployeeCatalog ? `<td>${esc(item.defaultFunction || "")}</td>` : ""}<td>${item.active ? "Ativo" : "Inativo"}</td><td class="btn-row"><button class="btn" data-action="toggleCatalog" data-key="${key}" data-id="${item.id}">${item.active ? "Desativar" : "Ativar"}</button><button class="btn" data-action="editCatalog" data-key="${key}" data-id="${item.id}">Editar</button></td></tr>`).join("")}
           </tbody>
         </table>
       </div>
@@ -1144,7 +1184,8 @@ function applyRetroPdfData(form, parsed) {
   const employees = parsed.employees.length ? parsed.employees : [""];
   const wrap = form.querySelector("#employeeBlocks");
   while (wrap.children.length < employees.length) {
-    wrap.insertAdjacentHTML("beforeend", employeeBlock(wrap.children.length, options(data.employees.filter((e) => e.active), "name"), options(data.functions.filter((f) => f.active), "name")));
+    wrap.insertAdjacentHTML("beforeend", employeeBlock(wrap.children.length, employeeOptions(), options(data.functions.filter((f) => f.active), "name")));
+    applyDefaultFunction(wrap.lastElementChild?.querySelector('[name="employeeName"]'));
   }
   [...wrap.children].forEach((block, index) => {
     if (employees[index]) setSelectValue(block.querySelector('[name="employeeName"]'), employees[index]);
@@ -1305,7 +1346,8 @@ function handleAction(event, action, dataset, user) {
   }
   if (action === "addEmployeeBlock") {
     const wrap = document.getElementById("employeeBlocks");
-    wrap.insertAdjacentHTML("beforeend", employeeBlock(wrap.children.length, options(data.employees.filter((e) => e.active), "name"), options(data.functions.filter((f) => f.active), "name")));
+    wrap.insertAdjacentHTML("beforeend", employeeBlock(wrap.children.length, employeeOptions(), options(data.functions.filter((f) => f.active), "name")));
+    applyDefaultFunction(wrap.lastElementChild?.querySelector('[name="employeeName"]'));
   }
   if (action === "removeEmployeeBlock") {
     const block = event.target.closest("[data-employee-block]");
@@ -1331,7 +1373,7 @@ function handleForm(event, formName, user) {
   const form = event.target;
   const fd = new FormData(form);
   if (formName === "schedule") saveSchedule(form, fd, event.submitter?.value || "draft");
-  if (formName === "catalog") addCatalog(form.dataset.key, fd.get("name"));
+  if (formName === "catalog") addCatalog(form.dataset.key, fd);
   if (formName === "user") addUser(fd);
   if (formName === "settings") saveSettings(fd);
   if (formName === "report") generateReport(fd);
@@ -1547,8 +1589,12 @@ function fixItem(scheduleId, itemId) {
   render();
 }
 
-function addCatalog(key, name) {
-  data[key].push({ id: uid(), name: String(name).trim(), active: true });
+function addCatalog(key, fd) {
+  const name = String(fd.get("name") || "").trim();
+  if (!name) return;
+  const record = { id: uid(), name, active: true };
+  if (key === "employees") record.defaultFunction = fd.get("defaultFunction") || "";
+  data[key].push(record);
   saveData();
   showToast("Cadastro incluido.");
   render();
@@ -1566,6 +1612,10 @@ function editCatalog(key, id) {
   const name = prompt("Novo nome:", item.name);
   if (!name) return;
   item.name = name.trim();
+  if (key === "employees") {
+    const functionName = prompt("Funcao padrao:", item.defaultFunction || "");
+    if (functionName !== null) item.defaultFunction = functionName.trim();
+  }
   saveData();
   render();
 }
