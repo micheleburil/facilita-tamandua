@@ -360,6 +360,11 @@ function bindViewEvents(user) {
   document.querySelectorAll("[data-auto]").forEach((el) => {
     el.addEventListener("change", () => {
       if (el.dataset.auto === "report") render();
+      if (el.dataset.auto === "reportFilter") {
+        data.settings.reportFilterType = el.value;
+        saveData();
+        render();
+      }
       if (el.dataset.auto === "heChart") {
         const form = document.getElementById("heChartControls");
         if (form) {
@@ -864,6 +869,7 @@ function renderSchedules() {
 }
 
 function renderReports() {
+  const filterType = data.settings.reportFilterType || "month";
   const employeeOptionsList = data.employees
     .filter((employee) => employee.active)
     .map((employee) => `<option value="${esc(employee.name)}">${esc(employee.name)}</option>`)
@@ -875,13 +881,13 @@ function renderReports() {
     <section class="card">
       <form class="form-grid" data-form="report">
         <div class="field"><label>Tipo de relatorio</label><select name="reportType"><option value="summary">Somente contabilizacao de horas</option><option value="complete">Completo com aprovacoes</option></select></div>
-        <div class="field"><label>Filtrar por</label><select name="filterType"><option value="month">Mes</option><option value="day">Data especifica</option><option value="period">Periodo</option><option value="employee">Funcionario</option><option value="year">Ano</option></select></div>
-        <div class="field"><label>Data</label><input name="date" type="date" value="${new Date().toISOString().slice(0, 10)}"></div>
-        <div class="field"><label>Mes</label><input name="month" type="month" value="${new Date().toISOString().slice(0, 7)}"></div>
-        <div class="field"><label>Inicio</label><input name="start" type="date" value="${new Date().getFullYear()}-01-01"></div>
-        <div class="field"><label>Fim</label><input name="end" type="date" value="${new Date().toISOString().slice(0, 10)}"></div>
-        <div class="field"><label>Funcionario</label><select name="employee"><option value="">Todos</option>${employeeOptionsList}</select></div>
-        <div class="field"><label>Ano</label><input name="year" type="number" min="2026" value="${new Date().getFullYear()}"></div>
+        <div class="field"><label>Filtrar por</label><select name="filterType" data-auto="reportFilter"><option value="month" ${filterType === "month" ? "selected" : ""}>Mes</option><option value="day" ${filterType === "day" ? "selected" : ""}>Data especifica</option><option value="period" ${filterType === "period" ? "selected" : ""}>Periodo</option><option value="employee" ${filterType === "employee" ? "selected" : ""}>Funcionario</option><option value="year" ${filterType === "year" ? "selected" : ""}>Ano</option></select></div>
+        <div class="field ${filterType === "day" ? "" : "hidden-field"}"><label>Data</label><input name="date" type="date" value="${new Date().toISOString().slice(0, 10)}"></div>
+        <div class="field ${filterType === "month" ? "" : "hidden-field"}"><label>Mes</label><input name="month" type="month" value="${new Date().toISOString().slice(0, 7)}"></div>
+        <div class="field ${filterType === "period" ? "" : "hidden-field"}"><label>Inicio</label><input name="start" type="date" value="${new Date().getFullYear()}-01-01"></div>
+        <div class="field ${filterType === "period" ? "" : "hidden-field"}"><label>Fim</label><input name="end" type="date" value="${new Date().toISOString().slice(0, 10)}"></div>
+        <div class="field ${filterType === "employee" ? "" : "hidden-field"}"><label>Funcionario</label><select name="employee"><option value="">Todos</option>${employeeOptionsList}</select></div>
+        <div class="field ${filterType === "year" ? "" : "hidden-field"}"><label>Ano</label><input name="year" type="number" min="2026" value="${new Date().getFullYear()}"></div>
         <div class="field"><label>Formato</label><select name="format"><option value="pdf">PDF</option><option value="excel">Excel</option></select></div>
         <div class="field full"><button class="btn primary" type="submit">Gerar relatorio</button></div>
       </form>
