@@ -1589,6 +1589,16 @@ th {
   justify-self: start;
 }
 
+.settings-tabs a.active {
+  background: white;
+  color: var(--primary);
+}
+
+.settings-tabs a:first-child:not(.active) {
+  background: transparent;
+  color: var(--muted);
+}
+
 @media (max-width: 980px) {
   .app-shell {
     display: block;
