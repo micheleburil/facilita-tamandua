@@ -12,6 +12,9 @@ const defaultData = {
     homeDescription: "Este app nasceu de uma ideia da Michele Buril para organizar, em um so lugar, os controles diarios de horas extras, GRD, compras de agua, relatorios, farois e acompanhamentos importantes da rotina.",
     homeImage: "",
     showHomeImage: false,
+    heActionPosition: "below",
+    heActionSize: "normal",
+    heActionColor: "primary",
     brandIcon: "F",
     topActionIcon1: "☼",
     topActionIcon2: "◷",
@@ -408,6 +411,24 @@ function bindViewEvents(user) {
     el.addEventListener("change", () => applyDefaultFunction(el));
     applyDefaultFunction(el);
   });
+  document.querySelectorAll("[data-day-type]").forEach((el) => {
+    el.addEventListener("change", () => updateDayTypeFields(el.value));
+    updateDayTypeFields(el.value);
+  });
+}
+
+function updateDayTypeFields(dayType) {
+  const isWorkday = dayType === "workday";
+  document.querySelectorAll(".non-workday-field").forEach((field) => {
+    field.classList.toggle("hidden-field", isWorkday);
+    field.querySelectorAll("input").forEach((input) => {
+      if (isWorkday) input.value = "";
+    });
+  });
+  document.querySelectorAll(".workday-note").forEach((field) => field.classList.toggle("hidden-field", !isWorkday));
+  document.querySelectorAll("[data-label-start]").forEach((label) => {
+    label.textContent = isWorkday ? "Inicio extra" : "Inicio";
+  });
 }
 
 function renderDashboard() {
@@ -499,18 +520,22 @@ function renderHeDashboard() {
     </section>
   ` : "";
 
+  const heActions = `
+    <div class="btn-row he-action-row ${data.settings.heActionPosition === "right" ? "align-right" : ""} size-${data.settings.heActionSize || "normal"} tone-${data.settings.heActionColor || "primary"}">
+      ${currentUser().role === "admin" ? `<button class="btn" data-action="goRetro">Lancar retroativa</button><button class="btn primary" data-action="goNew">Nova autorizacao</button><button class="btn" data-action="openView" data-view="rejected">Reprovados</button>` : ""}
+      ${currentUser().role === "marllon" || currentUser().role === "jeferson" ? `<button class="btn primary" data-action="openView" data-view="approvals">Aprovacoes</button>` : ""}
+      <button class="btn" data-action="openView" data-view="schedules">Programacoes</button>
+      <button class="btn" data-action="openView" data-view="reports">Relatorios</button>
+    </div>
+  `;
   return `
     <div class="page-head">
       <div>
         <h1>Horas Extras</h1>
         <p>${esc(data.settings.intro)}</p>
+        ${data.settings.heActionPosition !== "right" ? heActions : ""}
       </div>
-      <div class="btn-row">
-        ${currentUser().role === "admin" ? `<button class="btn" data-action="goRetro">Lancar retroativa</button><button class="btn primary" data-action="goNew">Nova autorizacao</button><button class="btn" data-action="openView" data-view="rejected">Reprovados</button>` : ""}
-        ${currentUser().role === "marllon" || currentUser().role === "jeferson" ? `<button class="btn primary" data-action="openView" data-view="approvals">Aprovacoes</button>` : ""}
-        <button class="btn" data-action="openView" data-view="schedules">Programacoes</button>
-        <button class="btn" data-action="openView" data-view="reports">Relatorios</button>
-      </div>
+      ${data.settings.heActionPosition === "right" ? heActions : ""}
     </div>
     ${renderHeCharts(items, month, year)}
     ${data.settings.recentPosition === "before" ? recentBlock : ""}
@@ -712,7 +737,7 @@ function renderScheduleForm() {
         <div class="form-grid">
           <div class="field"><label>Data autorizada</label><input name="date" type="date" min="${data.settings.minDate}" required value="${isRetroMode ? yesterday : today.toISOString().slice(0, 10)}"></div>
           <div class="field"><label>Lancamento retroativo</label><select name="retroactiveRequested"><option value="false" ${!isRetroMode ? "selected" : ""}>Nao</option><option value="true" ${isRetroMode ? "selected" : ""}>Sim, ja aprovado</option></select></div>
-          <div class="field"><label>Tipo do dia</label><select name="dayType"><option value="workday">Dia util</option><option value="saturday">Sabado</option><option value="sunday">Domingo</option><option value="holiday">Feriado</option></select></div>
+          <div class="field"><label>Tipo do dia</label><select name="dayType" data-day-type><option value="workday">Dia util</option><option value="saturday">Sabado</option><option value="sunday">Domingo</option><option value="holiday">Feriado</option></select></div>
           <div class="field"><label>Projeto</label><input name="project" value="${esc(data.settings.project)}" required></div>
           <div class="field"><label>Contratada</label><input name="contractor" value="${esc(data.settings.contractor)}" required></div>
           <div class="field full"><label>Justificativa${isRetroMode ? " (opcional)" : ""}</label><textarea name="reason" ${isRetroMode ? "" : "required"} placeholder="${isRetroMode ? "Opcional para lancamento retroativo" : "Descreva o motivo da hora extra"}"></textarea></div>
@@ -758,10 +783,11 @@ function employeeBlock(index, employees, functions) {
       <div class="form-grid">
         <div class="field"><label>Funcionario</label><select name="employeeName" required>${employees}</select></div>
         <div class="field"><label>Funcao</label><select name="functionName" required>${functions}</select></div>
-        <div class="field"><label>Inicio</label><input name="start" type="time"></div>
-        <div class="field"><label>Inicio intervalo</label><input name="breakStart" type="time"></div>
-        <div class="field"><label>Fim intervalo</label><input name="breakEnd" type="time"></div>
-        <div class="field"><label>Saida</label><input name="end" type="time"></div>
+        <div class="field"><label data-label-start>Inicio extra</label><input name="start" type="time"></div>
+        <div class="field full workday-note"><span class="field-help">Dia util usa somente 2 batidas: inicio extra e saida extra. O sistema calcula apenas o que passar de ${esc(data.settings.workdayLimit)}.</span></div>
+        <div class="field non-workday-field"><label>Inicio intervalo</label><input name="breakStart" type="time"></div>
+        <div class="field non-workday-field"><label>Fim intervalo</label><input name="breakEnd" type="time"></div>
+        <div class="field"><label>Saida extra</label><input name="end" type="time"></div>
       </div>
     </div>
   `;
@@ -856,6 +882,7 @@ function renderSchedules() {
                 <td>${scheduleStatusBadge(schedule)}</td>
                 <td class="btn-row">
                   ${currentUser().role === "admin" && schedule.items.every((item) => item.status === "draft") ? `<button class="btn primary" data-action="sendDraft" data-id="${schedule.id}">Enviar</button>` : ""}
+                  ${currentUser().role === "admin" ? `<button class="btn" data-action="editScheduleItem" data-id="${schedule.id}">Editar HE</button>` : ""}
                   <button class="btn" data-action="printSchedule" data-id="${schedule.id}">PDF</button>
                   <button class="btn" data-action="exportSchedule" data-id="${schedule.id}">Excel</button>
                 </td>
@@ -943,11 +970,16 @@ function renderSettings() {
   return `
     <div class="settings-shell">
       <div class="page-head settings-head"><div><h1>Configurações</h1><p>Personalize as informações e aparência do app.</p></div></div>
-      <form class="grid" data-form="settings">
+      <form class="grid settings-windows" data-form="settings">
         <div class="settings-tabs">
           <a href="#cfg-aparencia">✎ Aparência e textos</a>
           <a href="#cfg-logos">▧ Logos e imagens</a>
           <a href="#cfg-cores">◌ Cores e tema</a>
+          <a href="#cfg-abas">Abas</a>
+          <a href="#cfg-farol">Farois</a>
+          <a href="#cfg-regras">Regras</a>
+          <a href="#cfg-botoes-he">Botoes HE</a>
+          <a href="#cfg-emails">E-mails</a>
         </div>
         <section class="card settings-card settings-simple" id="cfg-aparencia">
           <div class="settings-section-head"><div><h3>Informações do app</h3><p class="muted">Edite os textos que aparecem no sistema.</p></div></div>
@@ -965,14 +997,15 @@ function renderSettings() {
         <section class="card settings-card" id="cfg-logos">
           <div class="section-title"><div><h3>Logos, imagens e simbolos</h3><p class="muted">Troque por texto, URL ou arquivo anexado</p></div></div>
           <div class="form-grid">
-          ${fileSettingField("brandIcon", "Simbolo/logo do menu", s.brandIcon)}
-          ${fileSettingField("topActionIcon1", "Simbolo superior 1", s.topActionIcon1)}
-          ${fileSettingField("topActionIcon2", "Simbolo superior 2", s.topActionIcon2)}
-          ${fileSettingField("defaultHeroImage", "Ilustracao padrao", s.defaultHeroImage)}
+          ${fileSettingField("brandIcon", "Logo/simbolo do menu lateral", s.brandIcon, "Aparece no topo do menu lateral, ao lado do nome Facilita.")}
+          ${fileSettingField("topActionIcon1", "Simbolo superior 1", s.topActionIcon1, "Aparece no canto superior direito, no primeiro botao redondo do cabecalho.")}
+          ${fileSettingField("topActionIcon2", "Simbolo superior 2", s.topActionIcon2, "Reserva para o segundo simbolo superior quando usado no cabecalho.")}
+          ${fileSettingField("defaultHeroImage", "Ilustracao padrao", s.defaultHeroImage, "Aparece no banner da tela inicial quando nao houver imagem inicial propria.")}
           <div class="field">
             <label>Imagem da tela inicial</label>
             <input type="file" accept="image/*" data-file-setting="homeImage">
             <input type="hidden" name="homeImage" value="${esc(s.homeImage)}">
+            <span class="field-help">Aparece no banner de boas-vindas da tela Inicio.</span>
             <span class="muted">${s.homeImage ? "Imagem anexada." : "Nenhuma imagem anexada."}</span>
           </div>
           <div class="field">
@@ -982,13 +1015,13 @@ function renderSettings() {
               <option value="true" ${s.showHomeImage ? "selected" : ""}>Sim</option>
             </select>
           </div>
-          ${fileSettingField("logoErg", "Logo ERG", s.logoErg)}
-          ${fileSettingField("logoVale", "Logo Vale", s.logoVale)}
+          ${fileSettingField("logoErg", "Logo ERG dos relatorios", s.logoErg, "Aparece no canto esquerdo dos PDFs e relatorios impressos.")}
+          ${fileSettingField("logoVale", "Logo Vale dos relatorios", s.logoVale, "Aparece no canto direito dos PDFs e relatorios impressos.")}
           </div>
         </section>
         <section class="card settings-card" id="cfg-cores">
           <div class="section-title"><div><h3>Cores e tema</h3><p class="muted">Ajuste a paleta visual do aplicativo</p></div></div>
-          <div class="form-grid">
+          <div class="form-grid color-grid">
           ${input("primary", "Cor principal", s.primary, "", "color")}
           ${input("secondary", "Cor secundaria", s.secondary, "", "color")}
           ${input("bgColor", "Cor do fundo", s.bgColor, "", "color")}
@@ -1062,7 +1095,35 @@ function renderSettings() {
           ${input("minDate", "Data minima", s.minDate, "", "date")}
         </div>
       </section>
-      <section class="card settings-card">
+      <section class="card settings-card" id="cfg-botoes-he">
+        <div class="section-title"><div><h3>Botoes de HE</h3><p class="muted">Controle lugar, tamanho e cor dos botoes Lancar retroativa, Nova autorizacao e relatorios.</p></div></div>
+        <div class="form-grid">
+          <div class="field">
+            <label>Lugar dos botoes</label>
+            <select name="heActionPosition">
+              <option value="below" ${s.heActionPosition !== "right" ? "selected" : ""}>Abaixo do texto</option>
+              <option value="right" ${s.heActionPosition === "right" ? "selected" : ""}>Ao lado do titulo</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Tamanho dos botoes</label>
+            <select name="heActionSize">
+              <option value="small" ${s.heActionSize === "small" ? "selected" : ""}>Pequeno</option>
+              <option value="normal" ${!s.heActionSize || s.heActionSize === "normal" ? "selected" : ""}>Normal</option>
+              <option value="large" ${s.heActionSize === "large" ? "selected" : ""}>Grande</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Cor dos botoes principais</label>
+            <select name="heActionColor">
+              <option value="primary" ${!s.heActionColor || s.heActionColor === "primary" ? "selected" : ""}>Azul principal</option>
+              <option value="secondary" ${s.heActionColor === "secondary" ? "selected" : ""}>Verde secundario</option>
+              <option value="dark" ${s.heActionColor === "dark" ? "selected" : ""}>Escuro</option>
+            </select>
+          </div>
+        </div>
+      </section>
+      <section class="card settings-card" id="cfg-emails">
         <div class="section-title"><div><h3>E-mails</h3><p class="muted">Contatos usados nas notificacoes</p></div></div>
         <div class="form-grid">
           ${input("micheleEmail", "E-mail Michele", s.micheleEmail, "", "email")}
@@ -1085,12 +1146,13 @@ function input(name, label, value, extraClass = "", type = "text") {
   return `<div class="field ${extraClass}"><label>${label}</label><input name="${name}" type="${type}" value="${esc(value)}"></div>`;
 }
 
-function fileSettingField(name, label, value) {
+function fileSettingField(name, label, value, help = "") {
   return `
     <div class="field">
       <label>${label}</label>
       <input name="${name}" value="${esc(value)}" placeholder="Texto, URL ou anexo">
       <input type="file" accept="image/*" data-file-setting="${name}">
+      ${help ? `<span class="field-help">${esc(help)}</span>` : ""}
       <span class="muted">${value ? "Imagem/texto configurado." : "Nenhuma imagem configurada."}</span>
     </div>
   `;
@@ -1407,6 +1469,8 @@ function handleAction(event, action, dataset, user) {
   if (action === "approveAll") approveAll(user);
   if (action === "rejectAll") rejectAll(user);
   if (action === "fixItem") fixItem(dataset.scheduleId, dataset.itemId);
+  if (action === "editHeItem") editHeItem(dataset.scheduleId, dataset.itemId);
+  if (action === "editScheduleItem") editScheduleItem(dataset.id);
   if (action === "sendDraft") sendDraft(dataset.id);
   if (action === "toggleCatalog") toggleCatalog(dataset.key, dataset.id);
   if (action === "editCatalog") editCatalog(dataset.key, dataset.id);
@@ -1505,10 +1569,12 @@ function readEmployeeBlock(block, dayType, retroactive, submitType) {
 }
 
 function calculateHours({ dayType, start, breakStart, breakEnd, end }) {
+  if (!end) return { minutes50: 0, minutes100: 0 };
   const endMin = toMin(end);
   if (dayType === "workday") {
     const limit = toMin(data.settings.workdayLimit);
-    const minutes50 = Math.max(0, endMin - limit);
+    const startMin = start ? Math.max(toMin(start), limit) : limit;
+    const minutes50 = Math.max(0, endMin - startMin);
     return { minutes50, minutes100: 0 };
   }
   if (!start || !end) return { minutes50: 0, minutes100: 0 };
@@ -1629,6 +1695,54 @@ function fixItem(scheduleId, itemId) {
   render();
 }
 
+function editHeItem(scheduleId, itemId) {
+  const { schedule, item } = findItem(scheduleId, itemId);
+  if (!schedule || !item) return;
+  const employeeName = prompt("Funcionario:", item.employeeName);
+  if (employeeName === null) return;
+  const functionName = prompt("Funcao:", item.functionName);
+  if (functionName === null) return;
+  const start = prompt(schedule.dayType === "workday" ? "Inicio extra:" : "Inicio:", item.start || "");
+  if (start === null) return;
+  let breakStart = item.breakStart || "";
+  let breakEnd = item.breakEnd || "";
+  if (schedule.dayType !== "workday") {
+    breakStart = prompt("Inicio intervalo:", item.breakStart || "");
+    if (breakStart === null) return;
+    breakEnd = prompt("Fim intervalo:", item.breakEnd || "");
+    if (breakEnd === null) return;
+  }
+  const end = prompt(schedule.dayType === "workday" ? "Saida extra:" : "Saida:", item.end || "");
+  if (end === null) return;
+  item.employeeName = employeeName || item.employeeName;
+  item.functionName = functionName || item.functionName;
+  item.start = start || "";
+  item.breakStart = schedule.dayType === "workday" ? "" : breakStart;
+  item.breakEnd = schedule.dayType === "workday" ? "" : breakEnd;
+  item.end = end || "";
+  const calc = calculateHours({ dayType: schedule.dayType, start: item.start, breakStart: item.breakStart, breakEnd: item.breakEnd, end: item.end });
+  item.minutes50 = calc.minutes50 || 0;
+  item.minutes100 = calc.minutes100 || 0;
+  item.totalMinutes = item.minutes50 + item.minutes100;
+  schedule.history.push(historyLine(`HE editada por Michele: ${item.employeeName}`));
+  saveData();
+  showToast("Hora extra editada e recalculada.");
+  render();
+}
+
+function editScheduleItem(scheduleId) {
+  const schedule = data.schedules.find((s) => s.id === scheduleId);
+  if (!schedule) return;
+  if (schedule.items.length === 1) {
+    editHeItem(schedule.id, schedule.items[0].id);
+    return;
+  }
+  const list = schedule.items.map((item, index) => `${index + 1} - ${item.employeeName} (${minutesToHours(item.totalMinutes)})`).join("\n");
+  const selected = Number(prompt(`Qual HE voce quer editar?\n${list}`));
+  if (!selected || selected < 1 || selected > schedule.items.length) return;
+  editHeItem(schedule.id, schedule.items[selected - 1].id);
+}
+
 function addCatalog(key, fd) {
   const name = String(fd.get("name") || "").trim();
   if (!name) return;
@@ -1689,6 +1803,9 @@ function saveSettings(fd) {
     "homeSubtitle",
     "homeDescription",
     "homeImage",
+    "heActionPosition",
+    "heActionSize",
+    "heActionColor",
     "brandIcon",
     "topActionIcon1",
     "topActionIcon2",
@@ -1921,6 +2038,7 @@ function renderItemsTable(items, compact = false, approval = false, fix = false)
             <td>${statusBadge(item.status)}</td>
             ${compact ? "" : `<td>${esc(item.reason || "")}${item.rejectedReason ? `<br><strong>Motivo:</strong> ${esc(item.rejectedReason)}` : ""}</td>`}
             <td class="btn-row">
+              ${currentUser().role === "admin" ? `<button class="btn" data-action="editHeItem" data-schedule-id="${item.scheduleId}" data-item-id="${item.id}">Editar</button>` : ""}
               ${approval ? `<button class="btn success" data-action="approveItem" data-schedule-id="${item.scheduleId}" data-item-id="${item.id}">Aprovar</button><button class="btn danger" data-action="rejectItem" data-schedule-id="${item.scheduleId}" data-item-id="${item.id}">Reprovar</button>` : ""}
               ${fix ? `<button class="btn primary" data-action="fixItem" data-schedule-id="${item.scheduleId}" data-item-id="${item.id}">Corrigir</button>` : ""}
             </td>
