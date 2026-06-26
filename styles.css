@@ -585,6 +585,11 @@ input[type="file"] {
   color: var(--primary);
 }
 
+.btn.icon-action {
+  gap: 6px;
+  white-space: nowrap;
+}
+
 .table-wrap {
   overflow: auto;
 }
