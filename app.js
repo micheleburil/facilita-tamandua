@@ -69,6 +69,12 @@ const defaultData = {
       { id: "waitingJeferson", label: "Aguard. Jeferson", type: "waitingJeferson", color: "yellow", icon: "J", visible: true, order: 8 },
       { id: "rejectedCount", label: "Reprovadas", type: "rejectedCount", color: "red", icon: "×", visible: true, order: 9 }
     ],
+    scheduleCards: [
+      { id: "schedule50", label: "Horas 50%", type: "hours50", color: "yellow", icon: "50", visible: true, order: 1 },
+      { id: "schedule100", label: "Horas 100%", type: "hours100", color: "red", icon: "100", visible: true, order: 2 },
+      { id: "scheduleTotal", label: "Total de horas", type: "totalHours", color: "green", icon: "Σ", visible: true, order: 3 },
+      { id: "scheduleEmployees", label: "Funcionarios", type: "employees", color: "blue", icon: "□", visible: true, order: 4 }
+    ],
     micheleEmail: "michele@empresa.com",
     marllonEmail: "marllon@empresa.com",
     jefersonEmail: "jeferson@empresa.com"
@@ -143,6 +149,8 @@ function saveData() {
 }
 
 function normalizeData(value) {
+  value.settings.scheduleCards = mergeConfigRows(defaultData.settings.scheduleCards, value.settings.scheduleCards || []);
+  value.settings.dashboardCards = mergeConfigRows(defaultData.settings.dashboardCards, value.settings.dashboardCards || []);
   const defaultFunctionByName = Object.fromEntries(employeeDefaults().map((item) => [normalizeText(item.name), item.defaultFunction]));
   value.employees = (value.employees || []).map((employee) => {
     const current = typeof employee === "string" ? { id: uid(), name: employee, active: true } : employee;
@@ -154,6 +162,15 @@ function normalizeData(value) {
     };
   });
   return value;
+}
+
+function mergeConfigRows(defaultRows, savedRows) {
+  const rows = (savedRows || []).map((row) => ({ ...row }));
+  const keys = new Set(rows.map((row) => row.id));
+  defaultRows.forEach((row) => {
+    if (!keys.has(row.id)) rows.push({ ...row });
+  });
+  return rows;
 }
 
 function currentUser() {
@@ -535,6 +552,7 @@ function renderHeDashboard() {
         <p>${esc(data.settings.intro)}</p>
         ${data.settings.heActionPosition !== "right" ? heActions : ""}
       </div>
+      ${currentUser().role === "admin" ? `<button class="btn" data-action="editLayout">Editar layout</button>` : ""}
       ${data.settings.heActionPosition === "right" ? heActions : ""}
     </div>
     ${renderHeCharts(items, month, year)}
@@ -565,11 +583,11 @@ function renderHeCharts(items, month, year) {
   return `
     <section class="card chart-controls">
       <form id="heChartControls" class="form-grid">
-        <div class="field"><label>Grafico por</label><select name="heChartMode" data-auto="heChart"><option value="status" ${mode === "status" ? "selected" : ""}>Status</option><option value="employee" ${mode === "employee" ? "selected" : ""}>Funcionario</option><option value="month" ${mode === "month" ? "selected" : ""}>Mes</option><option value="date" ${mode === "date" ? "selected" : ""}>Data</option><option value="period" ${mode === "period" ? "selected" : ""}>Periodo</option></select></div>
-        <div class="field"><label>Data</label><input name="heChartDate" type="date" value="${esc(chartDate)}" data-auto="heChart"></div>
-        <div class="field"><label>Mes</label><input name="heChartMonth" type="month" value="${esc(chartMonth)}" data-auto="heChart"></div>
-        <div class="field"><label>Inicio</label><input name="heChartStart" type="date" value="${esc(chartStart)}" data-auto="heChart"></div>
-        <div class="field"><label>Fim</label><input name="heChartEnd" type="date" value="${esc(chartEnd)}" data-auto="heChart"></div>
+        <div class="field"><label>Grafico por</label><select name="heChartMode" data-auto="heChart"><option value="status" ${mode === "status" ? "selected" : ""}>Total geral</option><option value="employee" ${mode === "employee" ? "selected" : ""}>Funcionario</option><option value="month" ${mode === "month" ? "selected" : ""}>Mes</option><option value="date" ${mode === "date" ? "selected" : ""}>Data especifica</option><option value="period" ${mode === "period" ? "selected" : ""}>Periodo</option></select></div>
+        <div class="field ${mode === "date" ? "" : "hidden-field"}"><label>Data</label><input name="heChartDate" type="date" value="${esc(chartDate)}" data-auto="heChart"></div>
+        <div class="field ${mode === "month" ? "" : "hidden-field"}"><label>Mes</label><input name="heChartMonth" type="month" value="${esc(chartMonth)}" data-auto="heChart"></div>
+        <div class="field ${mode === "period" || mode === "employee" ? "" : "hidden-field"}"><label>Inicio</label><input name="heChartStart" type="date" value="${esc(chartStart)}" data-auto="heChart"></div>
+        <div class="field ${mode === "period" || mode === "employee" ? "" : "hidden-field"}"><label>Fim</label><input name="heChartEnd" type="date" value="${esc(chartEnd)}" data-auto="heChart"></div>
       </form>
     </section>
     <section class="grid two chart-row">
@@ -657,7 +675,7 @@ function renderWaterDashboard() {
 
 function renderModuleDashboard({ title, subtitle, cards, charts }) {
   return `
-    <div class="page-head"><div><h1>${title}</h1><p>${subtitle}</p></div></div>
+    <div class="page-head"><div><h1>${title}</h1><p>${subtitle}</p></div>${currentUser().role === "admin" ? `<button class="btn" data-action="editLayout">Editar layout</button>` : ""}</div>
     <section class="grid three">
       ${cards.map(([label, value, color, icon]) => metric(label, value, color, icon)).join("")}
     </section>
@@ -845,23 +863,30 @@ function renderSchedules() {
   const metric50 = metricItems.reduce((acc, item) => acc + item.minutes50, 0);
   const metric100 = metricItems.reduce((acc, item) => acc + item.minutes100, 0);
   const uniqueEmployees = new Set(metricItems.map((item) => item.employeeName)).size;
+  const scheduleCardValues = {
+    hours50: minutesToHours(metric50),
+    hours100: minutesToHours(metric100),
+    totalHours: minutesToHours(metric50 + metric100),
+    employees: uniqueEmployees
+  };
+  const scheduleCards = (data.settings.scheduleCards || defaultData.settings.scheduleCards)
+    .filter((card) => card.visible)
+    .sort((a, b) => a.order - b.order);
   return `
     <div class="page-head">
       <div><h1>Programacoes</h1><p>Consulta geral de programacoes e status.</p></div>
+      ${currentUser().role === "admin" ? `<button class="btn" data-action="editLayout">Editar layout</button>` : ""}
     </div>
     <section class="card chart-controls">
       <form id="scheduleMetricControls" class="form-grid">
         <div class="field"><label>Farol por</label><select name="scheduleMetricMode" data-auto="scheduleMetrics"><option value="total" ${metricMode === "total" ? "selected" : ""}>Total geral</option><option value="month" ${metricMode === "month" ? "selected" : ""}>Mes</option><option value="period" ${metricMode === "period" ? "selected" : ""}>Periodo</option></select></div>
-        <div class="field"><label>Mes</label><input name="scheduleMetricMonth" type="month" value="${esc(metricMonth)}" data-auto="scheduleMetrics"></div>
-        <div class="field"><label>Inicio</label><input name="scheduleMetricStart" type="date" value="${esc(metricStart)}" data-auto="scheduleMetrics"></div>
-        <div class="field"><label>Fim</label><input name="scheduleMetricEnd" type="date" value="${esc(metricEnd)}" data-auto="scheduleMetrics"></div>
+        <div class="field ${metricMode === "month" ? "" : "hidden-field"}"><label>Mes</label><input name="scheduleMetricMonth" type="month" value="${esc(metricMonth)}" data-auto="scheduleMetrics"></div>
+        <div class="field ${metricMode === "period" ? "" : "hidden-field"}"><label>Inicio</label><input name="scheduleMetricStart" type="date" value="${esc(metricStart)}" data-auto="scheduleMetrics"></div>
+        <div class="field ${metricMode === "period" ? "" : "hidden-field"}"><label>Fim</label><input name="scheduleMetricEnd" type="date" value="${esc(metricEnd)}" data-auto="scheduleMetrics"></div>
       </form>
     </section>
     <section class="grid four">
-      ${metric("Horas 50%", minutesToHours(metric50), "yellow", "50")}
-      ${metric("Horas 100%", minutesToHours(metric100), "red", "100")}
-      ${metric("Total de horas", minutesToHours(metric50 + metric100), "green", "Σ")}
-      ${metric("Funcionarios", uniqueEmployees, "blue", "□")}
+      ${scheduleCards.map((card) => metric(card.label, scheduleCardValues[card.type] ?? "0", card.color, card.icon)).join("")}
     </section>
     <section class="card">
       <div class="table-wrap">
@@ -882,9 +907,8 @@ function renderSchedules() {
                 <td>${scheduleStatusBadge(schedule)}</td>
                 <td class="btn-row">
                   ${currentUser().role === "admin" && schedule.items.every((item) => item.status === "draft") ? `<button class="btn primary" data-action="sendDraft" data-id="${schedule.id}">Enviar</button>` : ""}
-                  ${currentUser().role === "admin" ? `<button class="btn" data-action="editScheduleItem" data-id="${schedule.id}">Editar HE</button>` : ""}
-                  <button class="btn" data-action="printSchedule" data-id="${schedule.id}">PDF</button>
-                  <button class="btn" data-action="exportSchedule" data-id="${schedule.id}">Excel</button>
+                  ${currentUser().role === "admin" ? `<button class="btn icon-action" title="Editar HE" data-action="editScheduleItem" data-id="${schedule.id}">✎ Editar HE</button>` : ""}
+                  <button class="btn icon-action" title="Exportar" data-action="exportScheduleChoice" data-id="${schedule.id}">⇩ Exportar</button>
                 </td>
               </tr>`;
             }).join("") || `<tr><td colspan="8">Nenhuma programacao cadastrada.</td></tr>`}
@@ -908,7 +932,7 @@ function renderReports() {
     <section class="card">
       <form class="form-grid" data-form="report">
         <div class="field"><label>Tipo de relatorio</label><select name="reportType"><option value="summary">Somente contabilizacao de horas</option><option value="complete">Completo com aprovacoes</option></select></div>
-        <div class="field"><label>Filtrar por</label><select name="filterType" data-auto="reportFilter"><option value="month" ${filterType === "month" ? "selected" : ""}>Mes</option><option value="day" ${filterType === "day" ? "selected" : ""}>Data especifica</option><option value="period" ${filterType === "period" ? "selected" : ""}>Periodo</option><option value="employee" ${filterType === "employee" ? "selected" : ""}>Funcionario</option><option value="year" ${filterType === "year" ? "selected" : ""}>Ano</option></select></div>
+        <div class="field"><label>Filtrar por</label><select name="filterType" data-auto="reportFilter"><option value="total" ${filterType === "total" ? "selected" : ""}>Total geral</option><option value="month" ${filterType === "month" ? "selected" : ""}>Mes</option><option value="day" ${filterType === "day" ? "selected" : ""}>Data especifica</option><option value="period" ${filterType === "period" ? "selected" : ""}>Periodo</option><option value="employee" ${filterType === "employee" ? "selected" : ""}>Funcionario</option><option value="year" ${filterType === "year" ? "selected" : ""}>Ano</option></select></div>
         <div class="field ${filterType === "day" ? "" : "hidden-field"}"><label>Data</label><input name="date" type="date" value="${new Date().toISOString().slice(0, 10)}"></div>
         <div class="field ${filterType === "month" ? "" : "hidden-field"}"><label>Mes</label><input name="month" type="month" value="${new Date().toISOString().slice(0, 7)}"></div>
         <div class="field ${filterType === "period" ? "" : "hidden-field"}"><label>Inicio</label><input name="start" type="date" value="${new Date().getFullYear()}-01-01"></div>
@@ -1079,6 +1103,17 @@ function renderSettings() {
             <thead><tr><th>Ordem</th><th>Nome</th><th>Icone</th><th>Tipo</th><th>Cor</th><th>Mostrar</th><th>Valor fixo</th><th>Acoes</th></tr></thead>
             <tbody id="dashboardCardRows">
               ${renderDashboardCardRows()}
+            </tbody>
+          </table>
+        </div>
+        <div class="section-title" style="margin-top:24px">
+          <div><h3>Farois da pagina Programacoes</h3><p class="muted">Mude nome, simbolo, cor, ordem e visibilidade dos farois desta tela.</p></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Ordem</th><th>Nome</th><th>Icone</th><th>Tipo</th><th>Cor</th><th>Mostrar</th></tr></thead>
+            <tbody>
+              ${renderScheduleCardRows()}
             </tbody>
           </table>
         </div>
@@ -1361,6 +1396,34 @@ function renderDashboardCardRows() {
     `).join("");
 }
 
+function renderScheduleCardRows() {
+  return (data.settings.scheduleCards || defaultData.settings.scheduleCards)
+    .slice()
+    .sort((a, b) => a.order - b.order)
+    .map((card) => `
+      <tr data-schedule-card-row data-id="${esc(card.id)}">
+        <td><input name="scheduleCardOrder" type="number" min="1" value="${esc(card.order)}" style="width:82px"></td>
+        <td><input name="scheduleCardLabel" value="${esc(card.label)}"></td>
+        <td><input name="scheduleCardIcon" value="${esc(card.icon || metricIcon(card.label))}" style="width:110px"></td>
+        <td>
+          <select name="scheduleCardType">
+            <option value="hours50" ${card.type === "hours50" ? "selected" : ""}>Horas 50%</option>
+            <option value="hours100" ${card.type === "hours100" ? "selected" : ""}>Horas 100%</option>
+            <option value="totalHours" ${card.type === "totalHours" ? "selected" : ""}>Total de horas</option>
+            <option value="employees" ${card.type === "employees" ? "selected" : ""}>Funcionarios</option>
+          </select>
+        </td>
+        <td><select name="scheduleCardColor">${dashboardColorOptions(card.color)}</select></td>
+        <td>
+          <select name="scheduleCardVisible">
+            <option value="true" ${card.visible ? "selected" : ""}>Sim</option>
+            <option value="false" ${!card.visible ? "selected" : ""}>Nao</option>
+          </select>
+        </td>
+      </tr>
+    `).join("");
+}
+
 function renderNavItemRows() {
   const configured = data.settings.navItems || defaultData.settings.navItems;
   const keys = new Set(configured.map((item) => item.key));
@@ -1477,6 +1540,13 @@ function handleAction(event, action, dataset, user) {
   if (action === "toggleUser") toggleUser(dataset.id);
   if (action === "printSchedule") printSchedule(dataset.id);
   if (action === "exportSchedule") exportSchedule(dataset.id);
+  if (action === "exportScheduleChoice") exportScheduleChoice(dataset.id);
+  if (action === "exportHeItemChoice") exportHeItemChoice(dataset.scheduleId, dataset.itemId);
+  if (action === "editLayout") {
+    currentView = "settings";
+    render();
+    setTimeout(() => document.getElementById("cfg-farol")?.scrollIntoView({ behavior: "smooth" }), 0);
+  }
   if (action === "addDashboardCard") addDashboardCard();
   if (action === "deleteDashboardCard") deleteDashboardCard(dataset.id);
 }
@@ -1851,6 +1921,15 @@ function saveSettings(fd) {
     visible: row.querySelector('[name="cardVisible"]').value === "true",
     value: row.querySelector('[name="cardValue"]').value.trim()
   }));
+  data.settings.scheduleCards = [...document.querySelectorAll("[data-schedule-card-row]")].map((row, index) => ({
+    id: row.dataset.id || uid(),
+    order: Number(row.querySelector('[name="scheduleCardOrder"]').value || index + 1),
+    label: row.querySelector('[name="scheduleCardLabel"]').value.trim() || "Novo farol",
+    type: row.querySelector('[name="scheduleCardType"]').value,
+    color: row.querySelector('[name="scheduleCardColor"]').value,
+    icon: row.querySelector('[name="scheduleCardIcon"]').value.trim(),
+    visible: row.querySelector('[name="scheduleCardVisible"]').value === "true"
+  }));
   data.settings.navItems = [...document.querySelectorAll("[data-nav-item-row]")].map((row, index) => ({
     key: row.dataset.key,
     order: Number(row.querySelector('[name="navOrder"]').value || index + 1),
@@ -1910,6 +1989,7 @@ function filterItems(fd) {
   const employee = fd.get("employee");
   const year = fd.get("year");
   return allItems().filter((item) => {
+    if (filterType === "total") return true;
     if (filterType === "day") return item.date === date;
     if (filterType === "month") return item.date.startsWith(month);
     if (filterType === "period") return item.date >= start && item.date <= end;
@@ -1936,6 +2016,29 @@ function printSchedule(id) {
 function exportSchedule(id) {
   const schedule = data.schedules.find((s) => s.id === id);
   downloadCsv(schedule.items.map((item) => flatItem(schedule, item)), `programacao-${schedule.date}.xls`);
+}
+
+function exportScheduleChoice(id) {
+  const option = prompt("Exportar como PDF ou Excel?", "PDF");
+  if (!option) return;
+  if (normalizeText(option).includes("excel") || normalizeText(option).includes("xls")) exportSchedule(id);
+  else printSchedule(id);
+}
+
+function exportHeItemChoice(scheduleId, itemId) {
+  const { schedule, item } = findItem(scheduleId, itemId);
+  if (!schedule || !item) return;
+  const option = prompt("Exportar esta HE como PDF ou Excel?", "PDF");
+  if (!option) return;
+  const row = { ...item, ...schedule, item };
+  if (normalizeText(option).includes("excel") || normalizeText(option).includes("xls")) {
+    downloadCsv([flatItem(schedule, item)], `he-${schedule.date}-${item.employeeName}.xls`);
+    return;
+  }
+  const win = window.open("", "_blank");
+  win.document.write(reportHtml([row], "complete", schedule));
+  win.document.close();
+  win.print();
 }
 
 function downloadCsv(items, filename) {
@@ -2038,7 +2141,8 @@ function renderItemsTable(items, compact = false, approval = false, fix = false)
             <td>${statusBadge(item.status)}</td>
             ${compact ? "" : `<td>${esc(item.reason || "")}${item.rejectedReason ? `<br><strong>Motivo:</strong> ${esc(item.rejectedReason)}` : ""}</td>`}
             <td class="btn-row">
-              ${currentUser().role === "admin" ? `<button class="btn" data-action="editHeItem" data-schedule-id="${item.scheduleId}" data-item-id="${item.id}">Editar</button>` : ""}
+              ${currentUser().role === "admin" ? `<button class="btn icon-action" title="Editar HE" data-action="editHeItem" data-schedule-id="${item.scheduleId}" data-item-id="${item.id}">✎ Editar</button>` : ""}
+              <button class="btn icon-action" title="Exportar HE" data-action="exportHeItemChoice" data-schedule-id="${item.scheduleId}" data-item-id="${item.id}">⇩ Exportar</button>
               ${approval ? `<button class="btn success" data-action="approveItem" data-schedule-id="${item.scheduleId}" data-item-id="${item.id}">Aprovar</button><button class="btn danger" data-action="rejectItem" data-schedule-id="${item.scheduleId}" data-item-id="${item.id}">Reprovar</button>` : ""}
               ${fix ? `<button class="btn primary" data-action="fixItem" data-schedule-id="${item.scheduleId}" data-item-id="${item.id}">Corrigir</button>` : ""}
             </td>
