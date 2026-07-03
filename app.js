@@ -2594,7 +2594,7 @@ function scheduleStatusBadge(schedule) {
 }
 
 function statusBadge(status) {
-  const color = status.includes("rejected") || status === "part_rejected" ? "red" : status.includes("waiting") || status === "in_approval" || status === "draft" ? "yellow" : "green";
+  const color = status.includes("rejected") || status === "part_rejected" || status === "pending" ? "red" : status.includes("waiting") || status === "in_approval" || status === "draft" ? "yellow" : "green";
   return `<span class="badge ${color}">${statusLabel(status)}</span>`;
 }
 
