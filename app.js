@@ -1,4 +1,4 @@
-﻿const STORAGE_KEY = "facilita-he-data-v1";
+const STORAGE_KEY = "facilita-he-data-v1";
 
 const defaultData = {
   sessionEmail: "",
@@ -16,8 +16,8 @@ const defaultData = {
     heActionSize: "normal",
     heActionColor: "primary",
     brandIcon: "F",
-    topActionIcon1: "â˜¼",
-    topActionIcon2: "â—·",
+    topActionIcon1: "☼",
+    topActionIcon2: "◷",
     defaultHeroImage: "",
     bgColor: "#f5f7fb",
     surfaceColor: "#ffffff",
@@ -59,21 +59,21 @@ const defaultData = {
     recentVisible: true,
     recentPosition: "after",
     dashboardCards: [
-      { id: "monthHours", label: "Horas no mes", type: "monthHours", color: "yellow", icon: "â—·", visible: true, order: 1 },
-      { id: "yearHours", label: "Horas no ano", type: "yearHours", color: "green", icon: "â–¤", visible: true, order: 2 },
-      { id: "totalHours", label: "Total geral", type: "totalHours", color: "green", icon: "â–¤", visible: true, order: 3 },
+      { id: "monthHours", label: "Horas no mes", type: "monthHours", color: "yellow", icon: "◷", visible: true, order: 1 },
+      { id: "yearHours", label: "Horas no ano", type: "yearHours", color: "green", icon: "▤", visible: true, order: 2 },
+      { id: "totalHours", label: "Total geral", type: "totalHours", color: "green", icon: "▤", visible: true, order: 3 },
       { id: "hours50", label: "Horas 50%", type: "hours50", color: "yellow", icon: "50", visible: true, order: 4 },
       { id: "hours100", label: "Horas 100%", type: "hours100", color: "red", icon: "100", visible: true, order: 5 },
-      { id: "approvedCount", label: "Aprovadas", type: "approvedCount", color: "green", icon: "âœ“", visible: true, order: 6 },
+      { id: "approvedCount", label: "Aprovadas", type: "approvedCount", color: "green", icon: "✓", visible: true, order: 6 },
       { id: "waitingMarllon", label: "Aguard. Marllon", type: "waitingMarllon", color: "yellow", icon: "M", visible: true, order: 7 },
       { id: "waitingJeferson", label: "Aguard. Jeferson", type: "waitingJeferson", color: "yellow", icon: "J", visible: true, order: 8 },
-      { id: "rejectedCount", label: "Reprovadas", type: "rejectedCount", color: "red", icon: "Ã—", visible: true, order: 9 }
+      { id: "rejectedCount", label: "Reprovadas", type: "rejectedCount", color: "red", icon: "×", visible: true, order: 9 }
     ],
     scheduleCards: [
       { id: "schedule50", label: "Horas 50%", type: "hours50", color: "yellow", icon: "50", visible: true, order: 1 },
       { id: "schedule100", label: "Horas 100%", type: "hours100", color: "red", icon: "100", visible: true, order: 2 },
-      { id: "scheduleTotal", label: "Total de horas", type: "totalHours", color: "green", icon: "Î£", visible: true, order: 3 },
-      { id: "scheduleEmployees", label: "Funcionarios", type: "employees", color: "blue", icon: "â–¡", visible: true, order: 4 }
+      { id: "scheduleTotal", label: "Total de horas", type: "totalHours", color: "green", icon: "Σ", visible: true, order: 3 },
+      { id: "scheduleEmployees", label: "Funcionarios", type: "employees", color: "blue", icon: "□", visible: true, order: 4 }
     ],
     micheleEmail: "michele@empresa.com",
     marllonEmail: "marllon@empresa.com",
@@ -149,6 +149,7 @@ function saveData() {
 }
 
 function normalizeData(value) {
+  value = repairStoredText(value);
   value.settings.scheduleCards = mergeConfigRows(defaultData.settings.scheduleCards, value.settings.scheduleCards || []);
   value.settings.dashboardCards = mergeConfigRows(defaultData.settings.dashboardCards, value.settings.dashboardCards || []);
   const defaultFunctionByName = Object.fromEntries(employeeDefaults().map((item) => [normalizeText(item.name), item.defaultFunction]));
@@ -171,6 +172,85 @@ function mergeConfigRows(defaultRows, savedRows) {
     if (!keys.has(row.id)) rows.push({ ...row });
   });
   return rows;
+}
+
+function repairStoredText(value) {
+  if (typeof value === "string") return repairMojibakeText(value);
+  if (Array.isArray(value)) return value.map(repairStoredText);
+  if (value && typeof value === "object") {
+    Object.keys(value).forEach((key) => {
+      value[key] = repairStoredText(value[key]);
+    });
+  }
+  return value;
+}
+
+function repairMojibakeText(text) {
+  const map = {
+    "OlÃ¡": "Olá",
+    "estÃ¡": "está",
+    "gestÃ£o": "gestão",
+    "aprovaÃ§Ã£o": "aprovação",
+    "aprovaÃ§Ãµes": "aprovações",
+    "AprovaÃ§Ãµes": "Aprovações",
+    "PendÃªncias": "Pendências",
+    "relatÃ³rio": "relatório",
+    "relatÃ³rios": "relatórios",
+    "relatÃ³rio": "relatório",
+    "ProgramaÃ§Ãµes": "Programações",
+    "programaÃ§Ãµes": "programações",
+    "decisÃµes": "decisões",
+    "rÃ¡pidas": "rápidas",
+    "sÃ³": "só",
+    "MÃªs": "Mês",
+    "ConfiguraÃ§Ãµes": "Configurações",
+    "informaÃ§Ãµes": "informações",
+    "InformaÃ§Ãµes": "Informações",
+    "aparÃªncia": "aparência",
+    "DescriÃ§Ã£o": "Descrição",
+    "descriÃ§Ã£o": "descrição",
+    "TÃ­tulo": "Título",
+    "alteraÃ§Ãµes": "alterações",
+    "sÃ£o": "são",
+    "Ã§": "ç",
+    "Ã£": "ã",
+    "Ãµ": "õ",
+    "Ã¡": "á",
+    "Ã©": "é",
+    "Ã­": "í",
+    "Ã³": "ó",
+    "Ãº": "ú",
+    "Ãª": "ê",
+    "Ã´": "ô",
+    "Ã‡": "Ç",
+    "Ã": "Á",
+    "â˜¼": "☼",
+    "â—·": "◷",
+    "â–¤": "▤",
+    "âœ“": "✓",
+    "Ã—": "×",
+    "Î£": "Σ",
+    "â–¡": "□",
+    "âŒ„": "⌄",
+    "âŒ‚": "⌂",
+    "â—«": "◫",
+    "â™¢": "♢",
+    "â–¥": "▥",
+    "â˜‘": "☑",
+    "â–£": "▣",
+    "âš™": "⚙",
+    "â“˜": "ⓘ",
+    "â€¢": "•",
+    "ðŸ‘‹": "👋",
+    "ï¼‹": "＋",
+    "â™™": "♙",
+    "â†’": "→",
+    "â‡ª": "⇪",
+    "âœŽ": "✎",
+    "â‡©": "⇩",
+    "â™¡": "♡"
+  };
+  return Object.entries(map).reduce((acc, [bad, good]) => acc.split(bad).join(good), text);
 }
 
 function currentUser() {
@@ -297,7 +377,7 @@ function renderApp(user) {
         </div>
       </aside>
       <section class="main">
-        <header class="top-actions"><button class="icon-btn" title="Tema">${renderIcon(data.settings.topActionIcon1 || "â˜¼")}</button><span class="top-avatar">${initials(user.name)}</span><span class="top-caret">âŒ„</span></header>
+        <header class="top-actions"><button class="icon-btn" title="Tema">${renderIcon(data.settings.topActionIcon1 || "☼")}</button><span class="top-avatar">${initials(user.name)}</span><span class="top-caret">⌄</span></header>
         <div class="content" id="view"></div>
       </section>
     </main>
@@ -320,16 +400,16 @@ function navIcon(key) {
   const item = (data.settings.navItems || []).find((navItem) => navItem.key === key);
   if (item?.icon) return renderIcon(item.icon);
   return {
-    dashboard: "âŒ‚",
-    heDashboard: "â—«",
-    grdDashboard: "â–¡",
-    waterDashboard: "â™¢",
-    reports: "â–¥",
-    approvals: "â˜‘",
-    schedules: "â–£",
-    settings: "âš™",
-    about: "â“˜"
-  }[key] || "â€¢";
+    dashboard: "⌂",
+    heDashboard: "◫",
+    grdDashboard: "□",
+    waterDashboard: "♢",
+    reports: "▥",
+    approvals: "☑",
+    schedules: "▣",
+    settings: "⚙",
+    about: "ⓘ"
+  }[key] || "•";
 }
 
 function initials(name) {
@@ -345,7 +425,7 @@ function initials(name) {
 function homeHeroVisual() {
   if (data.settings.showHomeImage && data.settings.homeImage) return `<img src="${esc(data.settings.homeImage)}" alt="Imagem inicial">`;
   if (data.settings.defaultHeroImage) return `<img src="${esc(data.settings.defaultHeroImage)}" alt="Imagem inicial">`;
-  return `<div class="hero-illustration"><div class="clock-face">â—·</div><div class="person"><span></span></div><div class="laptop"></div><div class="plant"></div></div>`;
+  return `<div class="hero-illustration"><div class="clock-face">◷</div><div class="person"><span></span></div><div class="laptop"></div><div class="plant"></div></div>`;
 }
 
 function renderView(user) {
@@ -466,36 +546,36 @@ function renderDashboard() {
   return `
     <section class="dashboard-welcome">
       <div>
-        <h1>OlÃ¡, ${esc(firstName(user.name))}! <span>ðŸ‘‹</span></h1>
-        <p>Aqui estÃ¡ o resumo da sua gestÃ£o hoje.</p>
+        <h1>Olá, ${esc(firstName(user.name))}! <span>👋</span></h1>
+        <p>Aqui está o resumo da sua gestão hoje.</p>
       </div>
     </section>
     <section class="quick-actions">
-      ${quickAction("ï¼‹", "Registrar HE", "Nova hora extra", "goNew")}
-      ${quickAction("â˜‘", "Ver aprovaÃ§Ãµes", "PendÃªncias", "openView", "approvals")}
-      ${quickAction("â–¤", "Gerar relatÃ³rio", "Exportar dados", "openView", "reports")}
-      ${quickAction("â–£", "ProgramaÃ§Ãµes", "Ver agenda", "openView", "schedules")}
+      ${quickAction("＋", "Registrar HE", "Nova hora extra", "goNew")}
+      ${quickAction("☑", "Ver aprovações", "Pendências", "openView", "approvals")}
+      ${quickAction("▤", "Gerar relatório", "Exportar dados", "openView", "reports")}
+      ${quickAction("▣", "Programações", "Ver agenda", "openView", "schedules")}
     </section>
     <section class="home-hero dashboard-hero card">
       <div>
         <span class="badge blue">Bem-vinda!</span>
-        <h1>Controle inteligente,<br>decisÃµes mais rÃ¡pidas.</h1>
-        <p>Acompanhe horas extras, aprovaÃ§Ãµes, programas, relatÃ³rios e indicadores em um sÃ³ lugar.</p>
+        <h1>Controle inteligente,<br>decisões mais rápidas.</h1>
+        <p>Acompanhe horas extras, aprovações, programas, relatórios e indicadores em um só lugar.</p>
       </div>
       ${homeHeroVisual()}
     </section>
     <section class="daily-summary card">
-      <div class="section-title"><h3>Resumo do dia</h3><span class="date-pill">${formatDate(today)} â–£</span></div>
+      <div class="section-title"><h3>Resumo do dia</h3><span class="date-pill">${formatDate(today)} ▣</span></div>
       <div class="grid four">
-        ${summaryCard("â—·", "Hoje", dayTotal, "Total registrado", "blue")}
-        ${summaryCard("â–£", "Semana", "00:00", "Total registrado", "green")}
-        ${summaryCard("â–¤", "MÃªs", monthTotal, "Total registrado", "yellow")}
-        ${summaryCard("â™™", "Pendentes", pending.length, "AprovaÃ§Ãµes", "purple")}
+        ${summaryCard("◷", "Hoje", dayTotal, "Total registrado", "blue")}
+        ${summaryCard("▣", "Semana", "00:00", "Total registrado", "green")}
+        ${summaryCard("▤", "Mês", monthTotal, "Total registrado", "yellow")}
+        ${summaryCard("♙", "Pendentes", pending.length, "Aprovações", "purple")}
       </div>
     </section>
     <section class="grid two home-lists">
       <article class="card">
-        <div class="section-title"><h3>AprovaÃ§Ãµes pendentes</h3><button class="btn ghost" data-action="openView" data-view="approvals">Ver todas</button></div>
+        <div class="section-title"><h3>Aprovações pendentes</h3><button class="btn ghost" data-action="openView" data-view="approvals">Ver todas</button></div>
         ${pendingList(pending)}
       </article>
       <article class="card">
@@ -520,14 +600,14 @@ function summaryCard(icon, label, value, sub, color) {
 
 function pendingList(items) {
   const sample = items.slice(0, 3);
-  if (!sample.length) return `<p class="muted">Nenhuma aprovaÃ§Ã£o pendente.</p>`;
-  return `<div class="pending-list">${sample.map((item) => `<div><span class="avatar mini">${initials(item.employeeName)}</span><strong>${esc(item.employeeName)}</strong><small>${esc(item.functionName)}</small><b>${minutesToHours(item.totalMinutes)}</b><time>${formatDate(item.date)}</time><em>Pendente</em></div>`).join("")}</div><button class="btn ghost center" data-action="openView" data-view="approvals">Ver todas as aprovaÃ§Ãµes â†’</button>`;
+  if (!sample.length) return `<p class="muted">Nenhuma aprovação pendente.</p>`;
+  return `<div class="pending-list">${sample.map((item) => `<div><span class="avatar mini">${initials(item.employeeName)}</span><strong>${esc(item.employeeName)}</strong><small>${esc(item.functionName)}</small><b>${minutesToHours(item.totalMinutes)}</b><time>${formatDate(item.date)}</time><em>Pendente</em></div>`).join("")}</div><button class="btn ghost center" data-action="openView" data-view="approvals">Ver todas as aprovações →</button>`;
 }
 
 function activityList(items) {
   const sample = items.slice(-4).reverse();
   if (!sample.length) return `<p class="muted">Nenhuma atividade recente.</p>`;
-  return `<div class="activity-list">${sample.map((item, index) => `<div><span>${["ï¼‹", "âœ“", "â–¤", "â–£"][index % 4]}</span><time>${item.end || "--:--"}</time><strong>${statusLabel(item.status)}</strong><small>${esc(item.employeeName)} â€¢ ${minutesToHours(item.totalMinutes)}</small></div>`).join("")}</div>`;
+  return `<div class="activity-list">${sample.map((item, index) => `<div><span>${["＋", "✓", "▤", "▣"][index % 4]}</span><time>${item.end || "--:--"}</time><strong>${statusLabel(item.status)}</strong><small>${esc(item.employeeName)} • ${minutesToHours(item.totalMinutes)}</small></div>`).join("")}</div>`;
 }
 
 function renderHeDashboard() {
@@ -649,12 +729,12 @@ function renderGrdDashboard() {
     title: "GRD",
     subtitle: "Controle de ensaios, assinaturas, pendencias, digitalizacao e arquivo fisico.",
     cards: [
-      ["Itens recebidos", 0, "gray", "â–¤"],
+      ["Itens recebidos", 0, "gray", "▤"],
       ["Aguard. Marllon", 0, "yellow", "M"],
       ["Aguard. Jeferson", 0, "yellow", "J"],
       ["Pendentes", 0, "red", "!"],
-      ["Aguard. digitalizacao", 0, "blue", "â‡ª"],
-      ["Concluidos", 0, "green", "âœ“"]
+      ["Aguard. digitalizacao", 0, "blue", "⇪"],
+      ["Concluidos", 0, "green", "✓"]
     ],
     charts: [
       ["Farol GRD", [["Recebidos", 0, "gray", 1], ["Jeferson", 0, "yellow", 1], ["Pendentes", 0, "red", 1], ["Concluidos", 0, "green", 1]]],
@@ -668,9 +748,9 @@ function renderWaterDashboard() {
     title: "Agua",
     subtitle: "Controle diario de compras de agua, comprovantes, fornecedores e destinacao.",
     cards: [
-      ["Galoes no mes", 0, "green", "â–¤"],
+      ["Galoes no mes", 0, "green", "▤"],
       ["Valor no mes", "R$ 0,00", "yellow", "$"],
-      ["Compras", 0, "green", "âœ“"],
+      ["Compras", 0, "green", "✓"],
       ["Sem comprovante", 0, "red", "!"]
     ],
     charts: [
@@ -720,10 +800,10 @@ function renderIcon(icon) {
 
 function metricIcon(label) {
   const text = String(label).toLowerCase();
-  if (text.includes("marllon") || text.includes("jeferson") || text.includes("aguard")) return "â—·";
-  if (text.includes("aprov")) return "âœ“";
-  if (text.includes("reprov") || text.includes("rejeit")) return "Ã—";
-  return "â–¤";
+  if (text.includes("marllon") || text.includes("jeferson") || text.includes("aguard")) return "◷";
+  if (text.includes("aprov")) return "✓";
+  if (text.includes("reprov") || text.includes("rejeit")) return "×";
+  return "▤";
 }
 
 function dashboardMetricValue(card, items, today, month, year) {
@@ -914,8 +994,8 @@ function renderSchedules() {
                 <td>${scheduleStatusBadge(schedule)}</td>
                 <td class="btn-row">
                   ${currentUser().role === "admin" && schedule.items.every((item) => item.status === "draft") ? `<button class="btn primary" data-action="sendDraft" data-id="${schedule.id}">Enviar</button>` : ""}
-                  ${currentUser().role === "admin" ? `<button class="btn icon-action" title="Editar HE" data-action="editScheduleItem" data-id="${schedule.id}">âœŽ Editar HE</button>` : ""}
-                  <button class="btn icon-action" title="Exportar" data-action="exportScheduleChoice" data-id="${schedule.id}">â‡© Exportar</button>
+                  ${currentUser().role === "admin" ? `<button class="btn icon-action" title="Editar HE" data-action="editScheduleItem" data-id="${schedule.id}">✎ Editar HE</button>` : ""}
+                  <button class="btn icon-action" title="Exportar" data-action="exportScheduleChoice" data-id="${schedule.id}">⇩ Exportar</button>
                 </td>
               </tr>`;
             }).join("") || `<tr><td colspan="8">Nenhuma programacao cadastrada.</td></tr>`}
@@ -1003,7 +1083,7 @@ function renderSettings() {
   const pageClass = (id, extra = "") => `card settings-card settings-page ${extra} ${activeSection === id ? "" : "hidden-field"}`;
   return `
     <div class="settings-shell">
-      <div class="page-head settings-head"><div><h1>ConfiguraÃ§Ãµes</h1><p>Personalize as informaÃ§Ãµes e aparÃªncia do app.</p></div></div>
+      <div class="page-head settings-head"><div><h1>Configurações</h1><p>Personalize as informações e aparência do app.</p></div></div>
       <form class="grid settings-windows" data-form="settings">
         <div class="settings-tabs">
           ${tab("cfg-aparencia", "Aparencia e textos")}
@@ -1016,15 +1096,15 @@ function renderSettings() {
           ${tab("cfg-emails", "E-mails")}
         </div>
         <section class="${pageClass("cfg-aparencia", "settings-simple")}" id="cfg-aparencia">
-          <div class="settings-section-head"><div><h3>InformaÃ§Ãµes do app</h3><p class="muted">Edite os textos que aparecem no sistema.</p></div></div>
+          <div class="settings-section-head"><div><h3>Informações do app</h3><p class="muted">Edite os textos que aparecem no sistema.</p></div></div>
         <div class="form-grid">
           ${input("appName", "Nome do app", s.appName)}
-          ${input("homeTitle", "TÃ­tulo da tela inicial", s.homeTitle)}
+          ${input("homeTitle", "Título da tela inicial", s.homeTitle)}
           ${input("homeSubtitle", "Subtitulo da tela inicial", s.homeSubtitle)}
-          ${input("description", "DescriÃ§Ã£o do app", s.description, "textarea")}
+          ${input("description", "Descrição do app", s.description, "textarea")}
           ${input("about", "Sobre o app", s.about, "textarea")}
           ${input("intro", "Texto inicial", s.intro, "full")}
-          <div class="field full hidden-field">${input("homeDescription", "DescriÃ§Ã£o da tela inicial", s.homeDescription)}</div>
+          <div class="field full hidden-field">${input("homeDescription", "Descrição da tela inicial", s.homeDescription)}</div>
         </div>
         <div class="settings-save inline"><button class="btn primary" type="submit">Salvar alteracoes</button></div>
         </section>
@@ -1178,7 +1258,7 @@ function renderSettings() {
       </section>
       <div class="settings-save"><button class="btn primary" type="submit">Salvar alteracoes</button></div>
       <section class="settings-tip">
-        <div><strong>â™¡ Dica</strong><br><span>As alteraÃ§Ãµes sÃ£o aplicadas automaticamente. Visualize o resultado no app.</span></div>
+        <div><strong>♡ Dica</strong><br><span>As alterações são aplicadas automaticamente. Visualize o resultado no app.</span></div>
         <button type="button" class="btn" data-action="openView" data-view="dashboard">Abrir o app</button>
       </section>
     </form>
@@ -1968,7 +2048,7 @@ function addDashboardCard() {
     label: "Novo card",
     type: "custom",
     color: "green",
-    icon: "â–¤",
+    icon: "▤",
     visible: true,
     value: "0"
   });
@@ -2157,8 +2237,8 @@ function renderItemsTable(items, compact = false, approval = false, fix = false)
             <td>${statusBadge(item.status)}</td>
             ${compact ? "" : `<td>${esc(item.reason || "")}${item.rejectedReason ? `<br><strong>Motivo:</strong> ${esc(item.rejectedReason)}` : ""}</td>`}
             <td class="btn-row">
-              ${currentUser().role === "admin" ? `<button class="btn icon-action" title="Editar HE" data-action="editHeItem" data-schedule-id="${item.scheduleId}" data-item-id="${item.id}">âœŽ Editar</button>` : ""}
-              <button class="btn icon-action" title="Exportar HE" data-action="exportHeItemChoice" data-schedule-id="${item.scheduleId}" data-item-id="${item.id}">â‡© Exportar</button>
+              ${currentUser().role === "admin" ? `<button class="btn icon-action" title="Editar HE" data-action="editHeItem" data-schedule-id="${item.scheduleId}" data-item-id="${item.id}">✎ Editar</button>` : ""}
+              <button class="btn icon-action" title="Exportar HE" data-action="exportHeItemChoice" data-schedule-id="${item.scheduleId}" data-item-id="${item.id}">⇩ Exportar</button>
               ${approval ? `<button class="btn success" data-action="approveItem" data-schedule-id="${item.scheduleId}" data-item-id="${item.id}">Aprovar</button><button class="btn danger" data-action="rejectItem" data-schedule-id="${item.scheduleId}" data-item-id="${item.id}">Reprovar</button>` : ""}
               ${fix ? `<button class="btn primary" data-action="fixItem" data-schedule-id="${item.scheduleId}" data-item-id="${item.id}">Corrigir</button>` : ""}
             </td>
