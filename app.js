@@ -45,6 +45,8 @@ const defaultData = {
     heChartEnd: "",
     project: "PDER - Tamandua",
     contractor: "ERG ENG ENGENHARIA",
+    appVersion: "1.0 inicial",
+    appAdmin: "Michele Buril",
     primary: "#0057b8",
     secondary: "#00a676",
     workdayLimit: "17:05",
@@ -1103,6 +1105,10 @@ function renderSettings() {
           ${input("homeSubtitle", "Subtitulo da tela inicial", s.homeSubtitle)}
           ${input("description", "Descrição do app", s.description, "textarea")}
           ${input("about", "Sobre o app", s.about, "textarea")}
+          ${input("project", "Projeto", s.project)}
+          ${input("contractor", "Contratada", s.contractor)}
+          ${input("appVersion", "Versao", s.appVersion)}
+          ${input("appAdmin", "Administradora", s.appAdmin)}
           ${input("intro", "Texto inicial", s.intro, "full")}
           <div class="field full hidden-field">${input("homeDescription", "Descrição da tela inicial", s.homeDescription)}</div>
         </div>
@@ -1593,8 +1599,8 @@ function renderAbout() {
       <p>${esc(data.settings.about)}</p>
       <p><strong>Projeto:</strong> ${esc(data.settings.project)}</p>
       <p><strong>Contratada:</strong> ${esc(data.settings.contractor)}</p>
-      <p><strong>Versao:</strong> 1.0 inicial</p>
-      <p><strong>Administradora:</strong> Michele Buril</p>
+      <p><strong>Versao:</strong> ${esc(data.settings.appVersion || "1.0 inicial")}</p>
+      <p><strong>Administradora:</strong> ${esc(data.settings.appAdmin || "Michele Buril")}</p>
     </section>
   `;
 }
