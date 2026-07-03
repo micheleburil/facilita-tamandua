@@ -98,7 +98,8 @@ const defaultData = {
     "Motorista",
     "Assistente de Qualidade"
   ].map((name) => ({ id: uid(), name, active: true })),
-  schedules: []
+  schedules: [],
+  grds: []
 };
 
 let data = loadData();
@@ -152,6 +153,7 @@ function saveData() {
 
 function normalizeData(value) {
   value = repairStoredText(value);
+  value.grds = value.grds || [];
   value.settings.scheduleCards = mergeConfigRows(defaultData.settings.scheduleCards, value.settings.scheduleCards || []);
   value.settings.dashboardCards = mergeConfigRows(defaultData.settings.dashboardCards, value.settings.dashboardCards || []);
   const defaultFunctionByName = Object.fromEntries(employeeDefaults().map((item) => [normalizeText(item.name), item.defaultFunction]));
@@ -435,7 +437,8 @@ function renderView(user) {
   const screens = {
     dashboard: renderDashboard,
     heDashboard: renderHeDashboard,
-    grdDashboard: renderGrdDashboard,
+    grdDashboard: renderGrdManager,
+    newGrd: renderGrdForm,
     waterDashboard: renderWaterDashboard,
     newSchedule: renderScheduleForm,
     approvals: renderApprovals,
@@ -762,6 +765,85 @@ function renderWaterDashboard() {
   });
 }
 
+function renderGrdManager() {
+  const items = data.grds || [];
+  const count = (status) => items.filter((item) => item.status === status).length;
+  const pending = items.filter((item) => item.status === "pending").length;
+  const waitingScan = items.filter((item) => item.status === "signed").length;
+  const done = items.filter((item) => item.scanned && item.archived).length;
+  const max = Math.max(items.length, 1);
+  return `
+    <div class="page-head">
+      <div><h1>GRD</h1><p>Controle de ensaios, assinaturas, pendencias, digitalizacao e arquivo fisico.</p></div>
+      <div class="btn-row">
+        ${currentUser().role === "admin" ? `<button class="btn primary" data-action="goNewGrd">+ Lancar GRD</button><button class="btn" data-action="editLayout">Editar layout</button>` : ""}
+      </div>
+    </div>
+    <section class="grid three">
+      ${metric("Itens recebidos", items.length, "gray", "▤")}
+      ${metric("Aguard. Marllon", count("waiting_marllon"), "yellow", "M")}
+      ${metric("Aguard. Jeferson", count("waiting_jeferson"), "yellow", "J")}
+      ${metric("Pendentes", pending, "red", "!")}
+      ${metric("Aguard. digitalizacao", waitingScan, "blue", "⇪")}
+      ${metric("Concluidos", done, "green", "✓")}
+    </section>
+    <section class="grid two chart-row">
+      ${barChart("Farol GRD", [
+        ["Recebidos", items.length, "gray", max],
+        ["Marllon", count("waiting_marllon"), "yellow", max],
+        ["Jeferson", count("waiting_jeferson"), "yellow", max],
+        ["Pendentes", pending, "red", max],
+        ["Concluidos", done, "green", max]
+      ])}
+      ${barChart("Prazos", grdDeadlineRows(items))}
+    </section>
+    <section class="card" style="margin-top:16px">
+      <div class="section-title">
+        <div><h3>Registros GRD</h3><span class="muted">OS, protocolo, tipo de ensaio e assinatura</span></div>
+        ${currentUser().role === "admin" ? `<button class="btn primary" data-action="goNewGrd">Novo GRD</button>` : ""}
+      </div>
+      ${renderGrdTable(items)}
+    </section>
+  `;
+}
+
+function renderGrdForm() {
+  const today = new Date().toISOString().slice(0, 10);
+  return `
+    <div class="page-head"><div><h1>Lancar GRD</h1><p>Informe os ensaios que serao enviados para assinatura.</p></div><button class="btn" data-action="openView" data-view="grdDashboard">Voltar</button></div>
+    <section class="card">
+      <form class="grid" data-form="grd">
+        <div class="form-grid">
+          ${input("receivedDate", "Data que chegou para Michele", today, "", "date")}
+          ${input("sentDate", "Data enviada para assinatura", today, "", "date")}
+          <div class="field">
+            <label>Empresa</label>
+            <select name="company">
+              <option value="Salum">Salum</option>
+              <option value="Fidens">Fidens</option>
+              <option value="Outra">Outra</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Tipo de ensaio</label>
+            <select name="testType">
+              ${grdTestOptions().map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join("")}
+            </select>
+          </div>
+          ${input("os", "Numero da OS", "")}
+          ${input("protocol", "Protocolo (opcional para Caracterizacao)", "")}
+          ${input("quantity", "Quantidade de documentos", 1, "", "number")}
+          ${input("notes", "Observacao", "", "textarea")}
+        </div>
+        <div class="btn-row">
+          <button class="btn primary" type="submit">Enviar para Marllon assinar</button>
+          <button class="btn" type="button" data-action="openView" data-view="grdDashboard">Cancelar</button>
+        </div>
+      </form>
+    </section>
+  `;
+}
+
 function renderModuleDashboard({ title, subtitle, cards, charts }) {
   return `
     <div class="page-head"><div><h1>${title}</h1><p>${subtitle}</p></div>${currentUser().role === "admin" ? `<button class="btn" data-action="editLayout">Editar layout</button>` : ""}</div>
@@ -776,6 +858,73 @@ function renderModuleDashboard({ title, subtitle, cards, charts }) {
       <p class="muted">Os registros desta area entram aqui quando o modulo for alimentado.</p>
     </section>
   `;
+}
+
+function renderGrdTable(items) {
+  return `
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Recebido</th><th>Empresa</th><th>Tipo</th><th>OS</th><th>Protocolo</th><th>Qtd</th><th>Status</th><th>Controle</th><th>Acoes</th></tr></thead>
+        <tbody>
+          ${items.map((item) => `<tr>
+            <td>${formatDate(item.receivedDate)}</td>
+            <td>${esc(item.company)}</td>
+            <td>${esc(item.testType)}</td>
+            <td>${esc(item.os)}</td>
+            <td>${esc(item.protocol || "-")}</td>
+            <td>${esc(item.quantity || 1)}</td>
+            <td>${statusBadge(item.status)}</td>
+            <td>
+              Enviado: ${formatDate(item.sentDate)}<br>
+              Retorno: ${formatDate(item.returnedDate) || "-"}<br>
+              Escaneado: ${item.scanned ? "Sim" : "Nao"}<br>
+              Arquivo fisico: ${item.archived ? "Sim" : "Nao"}
+              ${item.pendingReason ? `<br><strong>Motivo:</strong> ${esc(item.pendingReason)}<br><strong>Verificar:</strong> Gicele/Cleiton` : ""}
+            </td>
+            <td class="btn-row">
+              ${currentUser().role === "admin" ? `<button class="btn" data-action="editGrd" data-id="${item.id}">Editar</button>` : ""}
+              ${currentUser().role === "marllon" && item.status === "waiting_marllon" ? `<button class="btn success" data-action="approveGrd" data-id="${item.id}">Assinar</button><button class="btn danger" data-action="pendGrd" data-id="${item.id}">Pendente</button>` : ""}
+              ${currentUser().role === "jeferson" && item.status === "waiting_jeferson" ? `<button class="btn success" data-action="approveGrd" data-id="${item.id}">Assinar</button><button class="btn danger" data-action="pendGrd" data-id="${item.id}">Pendente</button>` : ""}
+              ${currentUser().role === "admin" && item.status === "pending" ? `<button class="btn primary" data-action="resendGrd" data-id="${item.id}">Reenviar</button>` : ""}
+              ${currentUser().role === "admin" && item.status === "signed" ? `<button class="btn" data-action="scanGrd" data-id="${item.id}">Escaneado</button>` : ""}
+              ${currentUser().role === "admin" && item.scanned && !item.archived ? `<button class="btn" data-action="archiveGrd" data-id="${item.id}">Arquivado</button>` : ""}
+            </td>
+          </tr>`).join("") || `<tr><td colspan="9">Nenhum GRD cadastrado.</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function grdDeadlineRows(items) {
+  const now = new Date();
+  const rows = { ok: 0, near: 0, late: 0 };
+  items.filter((item) => !["archived", "done"].includes(item.status)).forEach((item) => {
+    const base = item.sentDate ? new Date(`${item.sentDate}T00:00:00`) : new Date(item.createdAt || now);
+    const diffHours = (now - base) / 36e5;
+    if (diffHours > 72) rows.late += 1;
+    else if (diffHours > 24) rows.near += 1;
+    else rows.ok += 1;
+  });
+  const max = Math.max(rows.ok, rows.near, rows.late, 1);
+  return [["No prazo", rows.ok, "green", max], ["48h perto", rows.near, "yellow", max], ["Vencidos", rows.late, "red", max]];
+}
+
+function grdTestOptions() {
+  return [
+    "Caracterizacao",
+    "Acompanhamento de atividade",
+    "Compactacao",
+    "Compactidade Relativa",
+    "Concreto",
+    "Densidade da Areia Calibrada",
+    "Frasco de areia",
+    "Granulometria",
+    "Granulometria de solos",
+    "Penetrometro Dinamico Leve (PDL)",
+    "Proctor",
+    "Outro"
+  ];
 }
 
 function barChart(title, rows) {
@@ -1620,6 +1769,10 @@ function handleAction(event, action, dataset, user) {
     currentView = "newSchedule";
     render();
   }
+  if (action === "goNewGrd") {
+    currentView = "newGrd";
+    render();
+  }
   if (action === "addEmployeeBlock") {
     const wrap = document.getElementById("employeeBlocks");
     wrap.insertAdjacentHTML("beforeend", employeeBlock(wrap.children.length, employeeOptions(), options(data.functions.filter((f) => f.active), "name")));
@@ -1651,6 +1804,12 @@ function handleAction(event, action, dataset, user) {
   }
   if (action === "addDashboardCard") addDashboardCard();
   if (action === "deleteDashboardCard") deleteDashboardCard(dataset.id);
+  if (action === "approveGrd") approveGrd(dataset.id, user);
+  if (action === "pendGrd") pendGrd(dataset.id, user);
+  if (action === "resendGrd") resendGrd(dataset.id);
+  if (action === "scanGrd") scanGrd(dataset.id);
+  if (action === "archiveGrd") archiveGrd(dataset.id);
+  if (action === "editGrd") editGrd(dataset.id);
 }
 
 function handleForm(event, formName, user) {
@@ -1662,6 +1821,7 @@ function handleForm(event, formName, user) {
   if (formName === "user") addUser(fd);
   if (formName === "settings") saveSettings(fd);
   if (formName === "report") generateReport(fd);
+  if (formName === "grd") saveGrd(fd);
 }
 
 function saveSchedule(form, fd, submitType) {
@@ -1711,6 +1871,150 @@ function saveSchedule(form, fd, submitType) {
   scheduleLaunchMode = "normal";
   showToast(retroactive ? "Programacao retroativa aprovada automaticamente." : submitType === "draft" ? "Rascunho salvo." : "Programacao enviada para Marllon.");
   currentView = "schedules";
+  render();
+}
+
+function saveGrd(fd) {
+  if (currentUser().role !== "admin") {
+    showToast("Somente Michele/administradora pode lancar GRD.");
+    return;
+  }
+  const os = String(fd.get("os") || "").trim();
+  const testType = String(fd.get("testType") || "").trim();
+  const protocol = String(fd.get("protocol") || "").trim();
+  const quantity = Math.max(1, Number(fd.get("quantity") || 1));
+  if (!os || !testType) {
+    showToast("Informe OS e tipo de ensaio.");
+    return;
+  }
+  if (testType !== "Caracterizacao" && !protocol) {
+    showToast("Para ensaio comum, informe OS e protocolo.");
+    return;
+  }
+  data.grds.push({
+    id: uid(),
+    company: fd.get("company"),
+    testType,
+    os,
+    protocol,
+    quantity,
+    receivedDate: fd.get("receivedDate"),
+    sentDate: fd.get("sentDate"),
+    returnedDate: "",
+    notes: fd.get("notes") || "",
+    status: "waiting_marllon",
+    scanned: false,
+    archived: false,
+    pendingReason: "",
+    createdAt: new Date().toISOString(),
+    createdBy: currentUser().name,
+    history: [historyLine("GRD enviado para assinatura de Marllon")]
+  });
+  saveData();
+  currentView = "grdDashboard";
+  showToast("GRD lancado e enviado para Marllon assinar.");
+  render();
+}
+
+function findGrd(id) {
+  return (data.grds || []).find((item) => item.id === id);
+}
+
+function approveGrd(id, user) {
+  const item = findGrd(id);
+  if (!item) return;
+  const comment = prompt("Comentario opcional da assinatura:") || "";
+  if (user.role === "marllon" && item.status === "waiting_marllon") {
+    item.status = "waiting_jeferson";
+    item.marllonSignedAt = new Date().toISOString();
+    item.marllonComment = comment;
+    item.history.push(historyLine("GRD assinado por Marllon e enviado para Jeferson"));
+    showToast("GRD assinado por Marllon e enviado para Jeferson.");
+  } else if (user.role === "jeferson" && item.status === "waiting_jeferson") {
+    item.status = "signed";
+    item.jefersonSignedAt = new Date().toISOString();
+    item.jefersonComment = comment;
+    item.returnedDate = new Date().toISOString().slice(0, 10);
+    item.history.push(historyLine("GRD assinado por Jeferson e devolvido para Michele"));
+    showToast("GRD assinado por Jeferson. Agora falta escanear e arquivar.");
+  }
+  saveData();
+  render();
+}
+
+function pendGrd(id, user) {
+  const item = findGrd(id);
+  if (!item) return;
+  const reason = prompt("Motivo da pendencia:");
+  if (!reason) {
+    showToast("Motivo obrigatorio para pendencia.");
+    return;
+  }
+  item.status = "pending";
+  item.pendingReason = reason;
+  item.pendingBy = user.name;
+  item.pendingAt = new Date().toISOString();
+  item.history.push(historyLine(`GRD pendente por ${user.name}. Motivo: ${reason}. Verificar com Gicele/Cleiton`));
+  saveData();
+  showToast("Pendencia registrada para Michele verificar com Gicele/Cleiton.");
+  render();
+}
+
+function resendGrd(id) {
+  const item = findGrd(id);
+  if (!item) return;
+  item.status = "waiting_marllon";
+  item.pendingReason = "";
+  item.history.push(historyLine("GRD corrigido e reenviado para Marllon"));
+  saveData();
+  showToast("GRD reenviado para Marllon.");
+  render();
+}
+
+function scanGrd(id) {
+  const item = findGrd(id);
+  if (!item) return;
+  item.scanned = true;
+  item.scannedAt = new Date().toISOString();
+  item.history.push(historyLine("GRD escaneado"));
+  saveData();
+  showToast("GRD marcado como escaneado.");
+  render();
+}
+
+function archiveGrd(id) {
+  const item = findGrd(id);
+  if (!item) return;
+  item.archived = true;
+  item.archivedAt = new Date().toISOString();
+  item.status = "archived";
+  item.history.push(historyLine("GRD arquivado fisicamente"));
+  saveData();
+  showToast("GRD concluido e arquivado.");
+  render();
+}
+
+function editGrd(id) {
+  const item = findGrd(id);
+  if (!item) return;
+  const company = prompt("Empresa:", item.company);
+  if (company === null) return;
+  const testType = prompt("Tipo de ensaio:", item.testType);
+  if (testType === null) return;
+  const os = prompt("Numero da OS:", item.os);
+  if (os === null) return;
+  const protocol = prompt("Protocolo:", item.protocol || "");
+  if (protocol === null) return;
+  const quantity = prompt("Quantidade:", item.quantity || 1);
+  if (quantity === null) return;
+  item.company = company || item.company;
+  item.testType = testType || item.testType;
+  item.os = os || item.os;
+  item.protocol = protocol || "";
+  item.quantity = Math.max(1, Number(quantity || item.quantity || 1));
+  item.history.push(historyLine("GRD editado por Michele"));
+  saveData();
+  showToast("GRD editado.");
   render();
 }
 
@@ -2304,7 +2608,10 @@ function statusLabel(status) {
     approved: "Aprovado",
     retro_approved: "Retroativo aprovado",
     part_rejected: "Parcialmente reprovada",
-    in_approval: "Em aprovacao"
+    in_approval: "Em aprovacao",
+    pending: "Pendente",
+    signed: "Assinado",
+    archived: "Arquivado"
   }[status] || status;
 }
 
