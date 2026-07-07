@@ -57,6 +57,16 @@ const defaultData = {
     logoErg: "",
     logoVale: "",
     appSlug: "facilita-tamandua",
+    homeSummaryTitle: "Resumo do mes",
+    homeSummaryMode: "month",
+    homeSummaryDate: "",
+    homeSummaryMonth: "",
+    homeSummaryCards: [
+      { id: "periodHours", label: "Horas", type: "periodHours", color: "blue", icon: "◷", visible: true, order: 1 },
+      { id: "heCount", label: "HE lancadas", type: "heCount", color: "green", icon: "▣", visible: true, order: 2 },
+      { id: "grdCount", label: "GRDs", type: "grdCount", color: "yellow", icon: "▤", visible: true, order: 3 },
+      { id: "pendingCount", label: "Pendentes", type: "pendingCount", color: "purple", icon: "♙", visible: true, order: 4 }
+    ],
     recentTitle: "Farol recente",
     recentVisible: true,
     recentPosition: "after",
@@ -105,6 +115,7 @@ const defaultData = {
 let data = loadData();
 let currentView = "dashboard";
 let scheduleLaunchMode = "normal";
+let currentGrdViewId = "";
 let toastTimer;
 
 function uid() {
@@ -154,8 +165,20 @@ function saveData() {
 function normalizeData(value) {
   value = repairStoredText(value);
   value.grds = value.grds || [];
+  value.grds = value.grds.map((grd) => {
+    const current = { ...grd };
+    if (current.status === "waiting_marllon") current.status = "waiting_michele";
+    current.entries = normalizeGrdEntries(current);
+    current.quantity = current.entries.length || current.quantity || 1;
+    if (current.micheleSignedAt == null && current.marllonSignedAt) current.micheleSignedAt = current.marllonSignedAt;
+    if (current.micheleComment == null && current.marllonComment) current.micheleComment = current.marllonComment;
+    return current;
+  });
   value.settings.scheduleCards = mergeConfigRows(defaultData.settings.scheduleCards, value.settings.scheduleCards || []);
   value.settings.dashboardCards = mergeConfigRows(defaultData.settings.dashboardCards, value.settings.dashboardCards || []);
+  value.settings.homeSummaryCards = mergeConfigRows(defaultData.settings.homeSummaryCards, value.settings.homeSummaryCards || []);
+  value.settings.homeSummaryMode = value.settings.homeSummaryMode || defaultData.settings.homeSummaryMode;
+  value.settings.homeSummaryTitle = value.settings.homeSummaryTitle || defaultData.settings.homeSummaryTitle;
   const defaultFunctionByName = Object.fromEntries(employeeDefaults().map((item) => [normalizeText(item.name), item.defaultFunction]));
   value.employees = (value.employees || []).map((employee) => {
     const current = typeof employee === "string" ? { id: uid(), name: employee, active: true } : employee;
@@ -275,9 +298,11 @@ function canSee(view, user) {
   const map = {
     dashboard: ["admin", "marllon", "jeferson", "viewer"],
     heDashboard: ["admin", "marllon", "jeferson"],
-    grdDashboard: ["admin", "marllon", "jeferson"],
+    grdDashboard: ["admin", "jeferson"],
     waterDashboard: ["admin"],
     newSchedule: ["admin"],
+    newGrd: ["admin"],
+    grdView: ["admin", "jeferson"],
     approvals: ["marllon", "jeferson"],
     rejected: ["admin"],
     schedules: ["admin", "marllon", "jeferson", "viewer"],
@@ -435,10 +460,11 @@ function homeHeroVisual() {
 function renderView(user) {
   const view = document.getElementById("view");
   const screens = {
-    dashboard: renderDashboard,
+    dashboard: renderDashboardV2,
     heDashboard: renderHeDashboard,
     grdDashboard: renderGrdManager,
     newGrd: renderGrdForm,
+    grdView: renderGrdViewer,
     waterDashboard: renderWaterDashboard,
     newSchedule: renderScheduleForm,
     approvals: renderApprovals,
@@ -486,6 +512,17 @@ function bindViewEvents(user) {
           data.settings.heChartMonth = fd.get("heChartMonth");
           data.settings.heChartStart = fd.get("heChartStart");
           data.settings.heChartEnd = fd.get("heChartEnd");
+          saveData();
+          render();
+        }
+      }
+      if (el.dataset.auto === "homeSummary") {
+        const form = document.getElementById("homeSummaryControls");
+        if (form) {
+          const fd = new FormData(form);
+          data.settings.homeSummaryMode = fd.get("homeSummaryMode");
+          data.settings.homeSummaryDate = fd.get("homeSummaryDate");
+          data.settings.homeSummaryMonth = fd.get("homeSummaryMonth");
           saveData();
           render();
         }
@@ -615,6 +652,123 @@ function activityList(items) {
   return `<div class="activity-list">${sample.map((item, index) => `<div><span>${["＋", "✓", "▤", "▣"][index % 4]}</span><time>${item.end || "--:--"}</time><strong>${statusLabel(item.status)}</strong><small>${esc(item.employeeName)} • ${minutesToHours(item.totalMinutes)}</small></div>`).join("")}</div>`;
 }
 
+function renderDashboardV2() {
+  const user = currentUser();
+  const items = allItems();
+  const pending = items.filter((item) => item.status.includes("waiting") || item.status.includes("rejected"));
+  const summary = homeSummaryData(items, data.grds || []);
+  return `
+    <section class="dashboard-welcome">
+      <div>
+        <h1>Ola, ${esc(firstName(user.name))}!</h1>
+        <p>Acompanhe os indicadores principais por mes ou por dia.</p>
+      </div>
+    </section>
+    <section class="quick-actions">
+      ${currentUser().role === "admin" ? quickAction("+", "Registrar HE", "Nova hora extra", "goNew") : ""}
+      ${currentUser().role !== "admin" ? quickAction("◫", "HE", "Consultar horas extras", "openView", "heDashboard") : ""}
+      ${quickAction("✓", "Ver aprovacoes", "Pendencias", "openView", "approvals")}
+      ${currentUser().role === "admin" ? quickAction("▤", "Gerar relatorio", "Exportar dados", "openView", "reports") : ""}
+      ${currentUser().role === "admin" ? quickAction("□", "Programacoes", "Ver agenda", "openView", "schedules") : ""}
+    </section>
+    <section class="home-hero dashboard-hero card">
+      <div>
+        <span class="badge blue">Bem-vinda!</span>
+        <h1>Controle inteligente,<br>decisoes mais rapidas.</h1>
+        <p>Acompanhe horas extras, GRD, aprovacoes, relatorios e indicadores em um so lugar.</p>
+      </div>
+      ${homeHeroVisual()}
+    </section>
+    <section class="daily-summary card">
+      <div class="section-title">
+        <h3>${esc(data.settings.homeSummaryTitle || "Resumo do mes")}</h3>
+        <form id="homeSummaryControls" class="summary-controls">
+          <select name="homeSummaryMode" data-auto="homeSummary">
+            <option value="month" ${summary.mode === "month" ? "selected" : ""}>Resumo do mes</option>
+            <option value="day" ${summary.mode === "day" ? "selected" : ""}>Resumo do dia</option>
+          </select>
+          <input class="${summary.mode === "day" ? "" : "hidden-field"}" name="homeSummaryDate" type="date" value="${esc(summary.date)}" data-auto="homeSummary">
+          <input class="${summary.mode === "month" ? "" : "hidden-field"}" name="homeSummaryMonth" type="month" value="${esc(summary.month)}" data-auto="homeSummary">
+        </form>
+      </div>
+      <div class="grid four">
+        ${summary.cards.map((card) => summaryCard(card.icon, card.label, homeSummaryValue(card, summary), card.sub, card.color)).join("")}
+      </div>
+      <div class="grid two chart-row summary-chart-row">
+        ${barChart("Grafico do resumo", [
+          ["HE", summary.heCount, "blue", summary.max],
+          ["GRD", summary.grdCount, "yellow", summary.max],
+          ["Pendentes", summary.pendingCount, "red", summary.max],
+          ["Concluidos", summary.doneCount, "green", summary.max]
+        ])}
+        ${barChart("Horas HE", [
+          ["50%", Math.round(summary.minutes50 / 60), "yellow", summary.maxHours],
+          ["100%", Math.round(summary.minutes100 / 60), "red", summary.maxHours],
+          ["Total", Math.round(summary.totalMinutes / 60), "green", summary.maxHours]
+        ])}
+      </div>
+    </section>
+    <section class="grid two home-lists">
+      <article class="card">
+        <div class="section-title"><h3>Aprovacoes pendentes</h3><button class="btn ghost" data-action="openView" data-view="approvals">Ver todas</button></div>
+        ${pendingList(pending)}
+      </article>
+      <article class="card">
+        <div class="section-title"><h3>Atividades recentes</h3><button class="btn ghost" data-action="openView" data-view="heDashboard">Ver todas</button></div>
+        ${activityList(items)}
+      </article>
+    </section>
+  `;
+}
+
+function homeSummaryData(items, grds) {
+  const today = new Date().toISOString().slice(0, 10);
+  const currentMonth = today.slice(0, 7);
+  const mode = data.settings.homeSummaryMode || "month";
+  const date = data.settings.homeSummaryDate || today;
+  const month = data.settings.homeSummaryMonth || currentMonth;
+  const periodItems = mode === "day" ? items.filter((item) => item.date === date) : items.filter((item) => item.date.startsWith(month));
+  const periodGrds = mode === "day"
+    ? grds.filter((item) => String(item.receivedDate || item.createdAt || "").slice(0, 10) === date)
+    : grds.filter((item) => String(item.receivedDate || item.createdAt || "").slice(0, 7) === month);
+  const pendingCount = periodItems.filter((item) => item.status.includes("waiting") || item.status.includes("rejected")).length + periodGrds.filter((item) => ["waiting_michele", "waiting_jeferson", "pending", "signed"].includes(item.status)).length;
+  const doneCount = periodItems.filter((item) => item.status === "approved" || item.status === "retro_approved").length + periodGrds.filter((item) => item.status === "archived").length;
+  const minutes50 = periodItems.reduce((acc, item) => acc + (item.minutes50 || 0), 0);
+  const minutes100 = periodItems.reduce((acc, item) => acc + (item.minutes100 || 0), 0);
+  const cards = (data.settings.homeSummaryCards || defaultData.settings.homeSummaryCards)
+    .filter((card) => card.visible !== false)
+    .sort((a, b) => Number(a.order) - Number(b.order))
+    .map((card) => ({ ...card, sub: mode === "day" ? formatDate(date) : month }));
+  return {
+    mode,
+    date,
+    month,
+    cards,
+    heCount: periodItems.length,
+    grdCount: periodGrds.length,
+    pendingCount,
+    doneCount,
+    minutes50,
+    minutes100,
+    totalMinutes: minutes50 + minutes100,
+    max: Math.max(periodItems.length, periodGrds.length, pendingCount, doneCount, 1),
+    maxHours: Math.max(Math.round((minutes50 + minutes100) / 60), Math.round(minutes50 / 60), Math.round(minutes100 / 60), 1)
+  };
+}
+
+function homeSummaryValue(card, summary) {
+  const map = {
+    periodHours: minutesToHours(summary.totalMinutes),
+    hours50: minutesToHours(summary.minutes50),
+    hours100: minutesToHours(summary.minutes100),
+    heCount: summary.heCount,
+    grdCount: summary.grdCount,
+    pendingCount: summary.pendingCount,
+    doneCount: summary.doneCount
+  };
+  return map[card.type] ?? "0";
+}
+
 function renderHeDashboard() {
   const items = allItems();
   const now = new Date();
@@ -735,14 +889,14 @@ function renderGrdDashboard() {
     subtitle: "Controle de ensaios, assinaturas, pendencias, digitalizacao e arquivo fisico.",
     cards: [
       ["Itens recebidos", 0, "gray", "▤"],
-      ["Aguard. Marllon", 0, "yellow", "M"],
+      ["Aguard. Michele", 0, "yellow", "M"],
       ["Aguard. Jeferson", 0, "yellow", "J"],
       ["Pendentes", 0, "red", "!"],
       ["Aguard. digitalizacao", 0, "blue", "⇪"],
       ["Concluidos", 0, "green", "✓"]
     ],
     charts: [
-      ["Farol GRD", [["Recebidos", 0, "gray", 1], ["Jeferson", 0, "yellow", 1], ["Pendentes", 0, "red", 1], ["Concluidos", 0, "green", 1]]],
+      ["Farol GRD", [["Recebidos", 0, "gray", 1], ["Michele", 0, "yellow", 1], ["Jeferson", 0, "yellow", 1], ["Pendentes", 0, "red", 1], ["Concluidos", 0, "green", 1]]],
       ["Prazos", [["No prazo", 0, "green", 1], ["48h perto", 0, "yellow", 1], ["Vencidos", 0, "red", 1]]]
     ]
   });
@@ -771,6 +925,8 @@ function renderGrdManager() {
   const pending = items.filter((item) => item.status === "pending").length;
   const waitingScan = items.filter((item) => item.status === "signed").length;
   const done = items.filter((item) => item.scanned && item.archived).length;
+  const tracked = items.filter((item) => item.tracked === true).length;
+  const checked = items.filter((item) => item.checked === true).length;
   const max = Math.max(items.length, 1);
   return `
     <div class="page-head">
@@ -781,16 +937,18 @@ function renderGrdManager() {
     </div>
     <section class="grid three">
       ${metric("Itens recebidos", items.length, "gray", "▤")}
-      ${metric("Aguard. Marllon", count("waiting_marllon"), "yellow", "M")}
+      ${metric("Aguard. Michele", count("waiting_michele"), "yellow", "M")}
       ${metric("Aguard. Jeferson", count("waiting_jeferson"), "yellow", "J")}
       ${metric("Pendentes", pending, "red", "!")}
       ${metric("Aguard. digitalizacao", waitingScan, "blue", "⇪")}
       ${metric("Concluidos", done, "green", "✓")}
+      ${metric("Rastreados", tracked, "blue", "R")}
+      ${metric("Conferidos", checked, "green", "C")}
     </section>
     <section class="grid two chart-row">
       ${barChart("Farol GRD", [
         ["Recebidos", items.length, "gray", max],
-        ["Marllon", count("waiting_marllon"), "yellow", max],
+        ["Michele", count("waiting_michele"), "yellow", max],
         ["Jeferson", count("waiting_jeferson"), "yellow", max],
         ["Pendentes", pending, "red", max],
         ["Concluidos", done, "green", max]
@@ -825,18 +983,16 @@ function renderGrdForm() {
             </select>
           </div>
           <div class="field">
-            <label>Tipo de ensaio</label>
+            <label>Tipo de ensaio padrao</label>
             <select name="testType">
               ${grdTestOptions().map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join("")}
             </select>
           </div>
-          ${input("os", "Numero da OS", "")}
-          ${input("protocol", "Protocolo (opcional para Caracterizacao)", "")}
-          ${input("quantity", "Quantidade de documentos", 1, "", "number")}
+          ${input("entriesText", "Documentos da GRD: OS | Protocolo | Tipo de ensaio (um por linha)", "", "textarea")}
           ${input("notes", "Observacao", "", "textarea")}
         </div>
         <div class="btn-row">
-          <button class="btn primary" type="submit">Enviar para Marllon assinar</button>
+          <button class="btn primary" type="submit">Salvar e enviar para Michele assinar</button>
           <button class="btn" type="button" data-action="openView" data-view="grdDashboard">Cancelar</button>
         </div>
       </form>
@@ -864,32 +1020,38 @@ function renderGrdTable(items) {
   return `
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Recebido</th><th>Empresa</th><th>Tipo</th><th>OS</th><th>Protocolo</th><th>Qtd</th><th>Status</th><th>Controle</th><th>Acoes</th></tr></thead>
+        <thead><tr><th>Recebido</th><th>Empresa</th><th>Resumo dos documentos</th><th>Qtd</th><th>Status</th><th>Controle</th><th>Acoes</th></tr></thead>
         <tbody>
-          ${items.map((item) => `<tr>
+          ${items.map((item) => {
+            const entries = normalizeGrdEntries(item);
+            const first = entries[0] || {};
+            return `<tr>
             <td>${formatDate(item.receivedDate)}</td>
             <td>${esc(item.company)}</td>
-            <td>${esc(item.testType)}</td>
-            <td>${esc(item.os)}</td>
-            <td>${esc(item.protocol || "-")}</td>
-            <td>${esc(item.quantity || 1)}</td>
+            <td>${esc(first.os || item.os || "-")} | ${esc(first.protocol || item.protocol || "-")} | ${esc(first.testType || item.testType || "-")}${entries.length > 1 ? `<br><span class="muted">+ ${entries.length - 1} documento(s)</span>` : ""}</td>
+            <td>${esc(entries.length || item.quantity || 1)}</td>
             <td>${statusBadge(item.status)}</td>
             <td>
               Enviado: ${formatDate(item.sentDate)}<br>
               Retorno: ${formatDate(item.returnedDate) || "-"}<br>
-              Escaneado: ${item.scanned ? "Sim" : "Nao"}<br>
-              Arquivo fisico: ${item.archived ? "Sim" : "Nao"}
+              Digitalizado: ${item.scanned ? "Sim" : "Nao"}<br>
+              Arquivo fisico: ${item.archived ? "Sim" : "Nao"}<br>
+              Rastreado: ${item.tracked === true ? "Sim" : item.tracked === false ? "Nao" : "-"}<br>
+              Conferencia: ${item.checked === true ? "Sim" : item.checked === false ? "Nao" : "-"}
               ${item.pendingReason ? `<br><strong>Motivo:</strong> ${esc(item.pendingReason)}<br><strong>Verificar:</strong> Gicele/Cleiton` : ""}
             </td>
             <td class="btn-row">
+              <button class="btn" data-action="viewGrd" data-id="${item.id}">Abrir</button>
               ${currentUser().role === "admin" ? `<button class="btn" data-action="editGrd" data-id="${item.id}">Editar</button>` : ""}
-              ${currentUser().role === "marllon" && item.status === "waiting_marllon" ? `<button class="btn success" data-action="approveGrd" data-id="${item.id}">Assinar</button><button class="btn danger" data-action="pendGrd" data-id="${item.id}">Pendente</button>` : ""}
+              ${currentUser().role === "admin" ? `<button class="btn danger" data-action="deleteGrd" data-id="${item.id}">Apagar</button>` : ""}
+              ${currentUser().role === "admin" && item.status === "waiting_michele" ? `<button class="btn success" data-action="approveGrd" data-id="${item.id}">Assinar</button><button class="btn danger" data-action="pendGrd" data-id="${item.id}">Pendente</button>` : ""}
               ${currentUser().role === "jeferson" && item.status === "waiting_jeferson" ? `<button class="btn success" data-action="approveGrd" data-id="${item.id}">Assinar</button><button class="btn danger" data-action="pendGrd" data-id="${item.id}">Pendente</button>` : ""}
               ${currentUser().role === "admin" && item.status === "pending" ? `<button class="btn primary" data-action="resendGrd" data-id="${item.id}">Reenviar</button>` : ""}
-              ${currentUser().role === "admin" && item.status === "signed" ? `<button class="btn" data-action="scanGrd" data-id="${item.id}">Escaneado</button>` : ""}
-              ${currentUser().role === "admin" && item.scanned && !item.archived ? `<button class="btn" data-action="archiveGrd" data-id="${item.id}">Arquivado</button>` : ""}
+              ${currentUser().role === "admin" && item.status === "signed" && !item.scanned ? `<button class="btn" data-action="scanGrd" data-id="${item.id}">Digitalizado</button>` : ""}
+              ${currentUser().role === "admin" && item.status === "signed" && item.scanned && !item.archived ? `<button class="btn success" data-action="archiveGrd" data-id="${item.id}">Mover p/ concluido</button>` : ""}
             </td>
-          </tr>`).join("") || `<tr><td colspan="9">Nenhum GRD cadastrado.</td></tr>`}
+          </tr>`;
+          }).join("") || `<tr><td colspan="7">Nenhum GRD cadastrado.</td></tr>`}
         </tbody>
       </table>
     </div>
@@ -925,6 +1087,162 @@ function grdTestOptions() {
     "Proctor",
     "Outro"
   ];
+}
+
+function parseGrdEntries(text, fallback) {
+  const lines = String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length) {
+    return lines.map((line, index) => {
+      const match = line.match(/^(OS\s*)?([^-\s]+)\s*[-–]\s*(.+)$/i);
+      return {
+        id: uid(),
+        os: match ? `OS ${match[2]}` : fallback.os || `Item ${index + 1}`,
+        description: match ? match[3].trim() : line
+      };
+    });
+  }
+  const total = Math.max(1, Number(fallback.quantity || 1));
+  return Array.from({ length: total }, (_, index) => ({
+    id: uid(),
+    os: fallback.os ? `${fallback.os}${total > 1 ? `.${index + 1}` : ""}` : `Item ${index + 1}`,
+    description: fallback.protocol || fallback.testType || "-"
+  }));
+}
+
+function normalizeGrdEntries(item) {
+  if (Array.isArray(item.entries) && item.entries.length) {
+    return item.entries.map((entry, index) => ({
+      id: entry.id || uid(),
+      os: entry.os || item.os || `Item ${index + 1}`,
+      description: entry.description || entry.protocol || item.protocol || item.testType || "-"
+    }));
+  }
+  return parseGrdEntries("", {
+    os: item.os,
+    protocol: item.protocol,
+    testType: item.testType,
+    quantity: item.quantity
+  });
+}
+
+function parseGrdEntriesV2(text, fallback) {
+  const lines = String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length) {
+    return lines.map((line, index) => {
+      const parts = line.split("|").map((part) => part.trim());
+      const legacyMatch = line.match(/^(OS\s*)?([^-\s]+)\s*[-–]\s*(.+)$/i);
+      const os = parts.length >= 3 ? parts[0] : legacyMatch ? `OS ${legacyMatch[2]}` : fallback.os || `Item ${index + 1}`;
+      const protocol = parts.length >= 3 ? parts[1] : fallback.protocol || "";
+      const testType = parts.length >= 3 ? parts.slice(2).join(" | ") : legacyMatch ? legacyMatch[3].trim() : fallback.testType || line;
+      return {
+        id: uid(),
+        os,
+        protocol,
+        testType,
+        description: [protocol, testType].filter(Boolean).join(" - ") || "-"
+      };
+    });
+  }
+  return [{
+    id: uid(),
+    os: fallback.os || "",
+    protocol: fallback.protocol || "",
+    testType: fallback.testType || "",
+    description: [fallback.protocol, fallback.testType].filter(Boolean).join(" - ") || "-"
+  }];
+}
+
+function normalizeGrdEntriesV2(item) {
+  const oldEntries = Array.isArray(item.entries) && item.entries.length ? item.entries : parseGrdEntriesV2("", item);
+  return oldEntries.map((entry, index) => {
+    const protocol = entry.protocol || item.protocol || "";
+    const testType = entry.testType || entry.description || item.testType || "";
+    return {
+      id: entry.id || uid(),
+      os: entry.os || item.os || `Item ${index + 1}`,
+      protocol,
+      testType,
+      description: [protocol, testType].filter(Boolean).join(" - ") || entry.description || "-"
+    };
+  });
+}
+
+parseGrdEntries = parseGrdEntriesV2;
+normalizeGrdEntries = normalizeGrdEntriesV2;
+
+function renderGrdViewer() {
+  const item = findGrd(currentGrdViewId);
+  if (!item) {
+    return `<div class="page-head"><div><h1>GRD nao encontrado</h1><p>O registro selecionado nao esta mais disponivel.</p></div><button class="btn" data-action="openView" data-view="grdDashboard">Voltar</button></div>`;
+  }
+  const entries = normalizeGrdEntries(item);
+  const pages = chunk(entries, 13);
+  return `
+    <div class="page-head grd-view-head">
+      <div><h1>Guia GRD</h1><p>${esc(item.company)} - ${entries.length} ensaio(s)</p></div>
+      <div class="btn-row">
+        <button class="btn" data-action="openView" data-view="grdDashboard">Voltar</button>
+        <button class="btn primary" data-action="printGrd">Imprimir A4</button>
+      </div>
+    </div>
+    <div class="grd-print-wrap">
+      ${pages.map((pageEntries, pageIndex) => renderGrdA4Page(item, pageEntries, pageIndex + 1, pages.length)).join("")}
+    </div>
+  `;
+}
+
+function renderGrdA4Page(item, entries, pageNumber, totalPages) {
+  return `
+    <section class="grd-a4">
+      <header class="grd-a4-header">
+        <div class="grd-logo">erg<span>engenharia<br>geotecnica</span></div>
+        <h2>GRD - GUIA DE RECEBIMENTO DE DOCUMENTO</h2>
+        <div class="grd-vale">VALE</div>
+      </header>
+      <div class="grd-a4-meta">
+        <strong>Pagina: ${pageNumber}/${totalPages}</strong>
+        <span><b>Data envio</b>${formatDate(item.sentDate)}</span>
+        <span><b>Data devolucao</b>${formatDate(item.returnedDate) || "__/__/__"}</span>
+      </div>
+      <table class="grd-a4-table">
+        <thead>
+          <tr><th>OS</th><th>Protocolo</th><th>Tipo de ensaio</th></tr>
+        </thead>
+        <tbody>
+          ${entries.map((entry) => `
+            <tr>
+              <td>${esc(entry.os)}</td>
+              <td>${esc(entry.protocol || "-")}</td>
+              <td>${esc(entry.testType || entry.description || "-")}</td>
+            </tr>
+          `).join("")}
+          ${Array.from({ length: Math.max(0, 13 - entries.length) }, () => `<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>`).join("")}
+        </tbody>
+      </table>
+      <div class="grd-observation">
+        <strong>OBSERVACAO:</strong>
+        <p>${esc(item.notes || "")}</p>
+      </div>
+      <p class="grd-confirm">Confirmo que recebi os ensaios mencionados acima.</p>
+      <div class="grd-sign-title">ASSINATURA CONTRATADA:</div>
+      <footer class="grd-signatures">
+        <div><span></span><strong>ERG ENGENHARIA LTDA</strong></div>
+        <div><span></span><strong>FISCALIZACAO DA OBRA (ITACTEBEL / VALE)</strong><small>(Assinar e Carimbar)</small></div>
+      </footer>
+    </section>
+  `;
+}
+
+function chunk(list, size) {
+  const chunks = [];
+  for (let index = 0; index < list.length; index += size) chunks.push(list.slice(index, index + size));
+  return chunks.length ? chunks : [[]];
 }
 
 function barChart(title, rows) {
@@ -1146,6 +1464,7 @@ function renderSchedules() {
                 <td class="btn-row">
                   ${currentUser().role === "admin" && schedule.items.every((item) => item.status === "draft") ? `<button class="btn primary" data-action="sendDraft" data-id="${schedule.id}">Enviar</button>` : ""}
                   ${currentUser().role === "admin" ? `<button class="btn icon-action" title="Editar HE" data-action="editScheduleItem" data-id="${schedule.id}">✎ Editar HE</button>` : ""}
+                  ${currentUser().role === "admin" ? `<button class="btn danger" data-action="deleteSchedule" data-id="${schedule.id}">Apagar HE</button>` : ""}
                   <button class="btn icon-action" title="Exportar" data-action="exportScheduleChoice" data-id="${schedule.id}">⇩ Exportar</button>
                 </td>
               </tr>`;
@@ -1325,6 +1644,30 @@ function renderSettings() {
         <div class="section-title">
           <div><h3>Painel e farol</h3><p class="muted">Configure cards, icones e organizacao dos farois</p></div>
           <button type="button" class="btn" data-action="addDashboardCard">Adicionar card</button>
+        </div>
+        <div class="section-title" style="margin-top:10px">
+          <div><h3>Resumo da tela inicial</h3><p class="muted">Altere titulo, periodo padrao e farois do resumo.</p></div>
+        </div>
+        <div class="form-grid">
+          ${input("homeSummaryTitle", "Titulo do resumo", s.homeSummaryTitle || "Resumo do mes")}
+          <div class="field">
+            <label>Periodo padrao</label>
+            <select name="homeSummaryMode">
+              <option value="month" ${(s.homeSummaryMode || "month") === "month" ? "selected" : ""}>Mes</option>
+              <option value="day" ${s.homeSummaryMode === "day" ? "selected" : ""}>Dia</option>
+            </select>
+          </div>
+        </div>
+        <div class="table-wrap" style="margin-top:16px">
+          <table>
+            <thead><tr><th>Ordem</th><th>Nome</th><th>Icone</th><th>Tipo</th><th>Cor</th><th>Mostrar</th></tr></thead>
+            <tbody>
+              ${renderHomeSummaryCardRows()}
+            </tbody>
+          </table>
+        </div>
+        <div class="section-title" style="margin-top:24px">
+          <div><h3>Farol de HE</h3><p class="muted">Configure os cards da pagina HE.</p></div>
         </div>
         <div class="form-grid">
           ${input("recentTitle", "Nome do farol recente", s.recentTitle)}
@@ -1647,6 +1990,22 @@ function renderDashboardCardRows() {
     `).join("");
 }
 
+function renderHomeSummaryCardRows() {
+  return (data.settings.homeSummaryCards || defaultData.settings.homeSummaryCards)
+    .slice()
+    .sort((a, b) => Number(a.order) - Number(b.order))
+    .map((card) => `
+      <tr data-home-summary-card-row data-id="${esc(card.id)}">
+        <td><input name="homeSummaryCardOrder" type="number" min="1" value="${esc(card.order)}" style="width:82px"></td>
+        <td><input name="homeSummaryCardLabel" value="${esc(card.label)}"></td>
+        <td><input name="homeSummaryCardIcon" value="${esc(card.icon || "")}" style="width:92px"></td>
+        <td><select name="homeSummaryCardType">${homeSummaryTypeOptions(card.type)}</select></td>
+        <td><select name="homeSummaryCardColor">${dashboardColorOptions(card.color)}</select></td>
+        <td><select name="homeSummaryCardVisible"><option value="true" ${card.visible !== false ? "selected" : ""}>Sim</option><option value="false" ${card.visible === false ? "selected" : ""}>Nao</option></select></td>
+      </tr>
+    `).join("");
+}
+
 function renderScheduleCardRows() {
   return (data.settings.scheduleCards || defaultData.settings.scheduleCards)
     .slice()
@@ -1727,11 +2086,27 @@ function dashboardTypeOptions(selected) {
   return types.map(([value, label]) => `<option value="${value}" ${selected === value ? "selected" : ""}>${label}</option>`).join("");
 }
 
+function homeSummaryTypeOptions(selected) {
+  const types = [
+    ["periodHours", "Horas no periodo"],
+    ["hours50", "Horas 50%"],
+    ["hours100", "Horas 100%"],
+    ["heCount", "Qtd HE"],
+    ["grdCount", "Qtd GRD"],
+    ["pendingCount", "Pendentes"],
+    ["doneCount", "Concluidos"]
+  ];
+  return types.map(([value, label]) => `<option value="${value}" ${selected === value ? "selected" : ""}>${label}</option>`).join("");
+}
+
 function dashboardColorOptions(selected) {
   const colors = [
+    ["blue", "Azul"],
     ["green", "Verde"],
     ["yellow", "Amarelo"],
-    ["red", "Vermelho"]
+    ["red", "Vermelho"],
+    ["purple", "Roxo"],
+    ["gray", "Cinza"]
   ];
   return colors.map(([value, label]) => `<option value="${value}" ${selected === value ? "selected" : ""}>${label}</option>`).join("");
 }
@@ -1789,6 +2164,8 @@ function handleAction(event, action, dataset, user) {
   if (action === "fixItem") fixItem(dataset.scheduleId, dataset.itemId);
   if (action === "editHeItem") editHeItem(dataset.scheduleId, dataset.itemId);
   if (action === "editScheduleItem") editScheduleItem(dataset.id);
+  if (action === "deleteHeItem") deleteHeItem(dataset.scheduleId, dataset.itemId);
+  if (action === "deleteSchedule") deleteSchedule(dataset.id);
   if (action === "sendDraft") sendDraft(dataset.id);
   if (action === "toggleCatalog") toggleCatalog(dataset.key, dataset.id);
   if (action === "editCatalog") editCatalog(dataset.key, dataset.id);
@@ -1810,6 +2187,13 @@ function handleAction(event, action, dataset, user) {
   if (action === "scanGrd") scanGrd(dataset.id);
   if (action === "archiveGrd") archiveGrd(dataset.id);
   if (action === "editGrd") editGrd(dataset.id);
+  if (action === "deleteGrd") deleteGrd(dataset.id);
+  if (action === "viewGrd") {
+    currentGrdViewId = dataset.id;
+    currentView = "grdView";
+    render();
+  }
+  if (action === "printGrd") window.print();
 }
 
 function handleForm(event, formName, user) {
@@ -1879,40 +2263,38 @@ function saveGrd(fd) {
     showToast("Somente Michele/administradora pode lancar GRD.");
     return;
   }
-  const os = String(fd.get("os") || "").trim();
   const testType = String(fd.get("testType") || "").trim();
-  const protocol = String(fd.get("protocol") || "").trim();
-  const quantity = Math.max(1, Number(fd.get("quantity") || 1));
-  if (!os || !testType) {
-    showToast("Informe OS e tipo de ensaio.");
+  const entries = parseGrdEntries(fd.get("entriesText"), { testType }).filter((entry) => entry.os && entry.protocol && entry.testType);
+  if (!entries.length) {
+    showToast("Informe ao menos um documento no formato: OS | Protocolo | Tipo de ensaio.");
     return;
   }
-  if (testType !== "Caracterizacao" && !protocol) {
-    showToast("Para ensaio comum, informe OS e protocolo.");
-    return;
-  }
+  const firstEntry = entries[0];
   data.grds.push({
     id: uid(),
     company: fd.get("company"),
-    testType,
-    os,
-    protocol,
-    quantity,
+    testType: firstEntry.testType || testType,
+    os: firstEntry.os,
+    protocol: firstEntry.protocol,
+    quantity: entries.length,
     receivedDate: fd.get("receivedDate"),
     sentDate: fd.get("sentDate"),
     returnedDate: "",
     notes: fd.get("notes") || "",
-    status: "waiting_marllon",
+    entries,
+    status: "waiting_michele",
     scanned: false,
     archived: false,
+    tracked: null,
+    checked: null,
     pendingReason: "",
     createdAt: new Date().toISOString(),
     createdBy: currentUser().name,
-    history: [historyLine("GRD enviado para assinatura de Marllon")]
+    history: [historyLine("GRD enviado para assinatura de Michele")]
   });
   saveData();
   currentView = "grdDashboard";
-  showToast("GRD lancado e enviado para Marllon assinar.");
+  showToast("GRD lancado e enviado para Michele assinar.");
   render();
 }
 
@@ -1923,20 +2305,20 @@ function findGrd(id) {
 function approveGrd(id, user) {
   const item = findGrd(id);
   if (!item) return;
-  const comment = prompt("Comentario opcional da assinatura:") || "";
-  if (user.role === "marllon" && item.status === "waiting_marllon") {
+  if (user.role === "admin" && item.status === "waiting_michele") {
     item.status = "waiting_jeferson";
-    item.marllonSignedAt = new Date().toISOString();
-    item.marllonComment = comment;
-    item.history.push(historyLine("GRD assinado por Marllon e enviado para Jeferson"));
-    showToast("GRD assinado por Marllon e enviado para Jeferson.");
+    item.micheleSignedAt = new Date().toISOString();
+    item.history.push(historyLine("GRD assinado por Michele e enviado para Jeferson"));
+    showToast("GRD assinado por Michele e enviado para Jeferson.");
   } else if (user.role === "jeferson" && item.status === "waiting_jeferson") {
     item.status = "signed";
     item.jefersonSignedAt = new Date().toISOString();
-    item.jefersonComment = comment;
     item.returnedDate = new Date().toISOString().slice(0, 10);
     item.history.push(historyLine("GRD assinado por Jeferson e devolvido para Michele"));
     showToast("GRD assinado por Jeferson. Agora falta escanear e arquivar.");
+  } else {
+    showToast("Este GRD nao esta aguardando assinatura deste usuario.");
+    return;
   }
   saveData();
   render();
@@ -1945,11 +2327,12 @@ function approveGrd(id, user) {
 function pendGrd(id, user) {
   const item = findGrd(id);
   if (!item) return;
-  const reason = prompt("Motivo da pendencia:");
-  if (!reason) {
-    showToast("Motivo obrigatorio para pendencia.");
+  const canPend = (user.role === "admin" && item.status === "waiting_michele") || (user.role === "jeferson" && item.status === "waiting_jeferson");
+  if (!canPend) {
+    showToast("Este GRD nao esta aguardando pendencia deste usuario.");
     return;
   }
+  const reason = "Pendencia sinalizada pelo usuario";
   item.status = "pending";
   item.pendingReason = reason;
   item.pendingBy = user.name;
@@ -1963,11 +2346,11 @@ function pendGrd(id, user) {
 function resendGrd(id) {
   const item = findGrd(id);
   if (!item) return;
-  item.status = "waiting_marllon";
+  item.status = "waiting_michele";
   item.pendingReason = "";
-  item.history.push(historyLine("GRD corrigido e reenviado para Marllon"));
+  item.history.push(historyLine("GRD corrigido e reenviado para Michele"));
   saveData();
-  showToast("GRD reenviado para Marllon.");
+  showToast("GRD reenviado para Michele.");
   render();
 }
 
@@ -1976,21 +2359,29 @@ function scanGrd(id) {
   if (!item) return;
   item.scanned = true;
   item.scannedAt = new Date().toISOString();
-  item.history.push(historyLine("GRD escaneado"));
+  item.history.push(historyLine("GRD digitalizado"));
   saveData();
-  showToast("GRD marcado como escaneado.");
+  showToast("GRD marcado como digitalizado. Agora arquive e mova para concluido.");
   render();
 }
 
 function archiveGrd(id) {
   const item = findGrd(id);
   if (!item) return;
+  if (!item.scanned) {
+    showToast("Digitalize o GRD antes de mover para concluido.");
+    return;
+  }
+  const tracked = confirm("Este GRD foi rastreado?");
+  const checked = confirm("Voce fez a conferencia antes de concluir?");
   item.archived = true;
   item.archivedAt = new Date().toISOString();
+  item.tracked = tracked;
+  item.checked = checked;
   item.status = "archived";
-  item.history.push(historyLine("GRD arquivado fisicamente"));
+  item.history.push(historyLine(`GRD arquivado fisicamente e movido para concluido. Rastreado: ${tracked ? "sim" : "nao"}. Conferencia: ${checked ? "sim" : "nao"}`));
   saveData();
-  showToast("GRD concluido e arquivado.");
+  showToast("GRD concluido, arquivado e registrado com rastreio/conferencia.");
   render();
 }
 
@@ -1999,22 +2390,38 @@ function editGrd(id) {
   if (!item) return;
   const company = prompt("Empresa:", item.company);
   if (company === null) return;
-  const testType = prompt("Tipo de ensaio:", item.testType);
-  if (testType === null) return;
-  const os = prompt("Numero da OS:", item.os);
-  if (os === null) return;
-  const protocol = prompt("Protocolo:", item.protocol || "");
-  if (protocol === null) return;
-  const quantity = prompt("Quantidade:", item.quantity || 1);
-  if (quantity === null) return;
+  const currentEntries = normalizeGrdEntries(item).map((entry) => `${entry.os} | ${entry.protocol || ""} | ${entry.testType || entry.description || ""}`).join("\n");
+  const entriesText = prompt("Documentos da GRD (OS | Protocolo | Tipo de ensaio):", currentEntries);
+  if (entriesText === null) return;
+  const entries = parseGrdEntries(entriesText, item).filter((entry) => entry.os && entry.protocol && entry.testType);
+  if (!entries.length) {
+    showToast("Informe ao menos um documento no formato: OS | Protocolo | Tipo de ensaio.");
+    return;
+  }
+  const firstEntry = entries[0];
   item.company = company || item.company;
-  item.testType = testType || item.testType;
-  item.os = os || item.os;
-  item.protocol = protocol || "";
-  item.quantity = Math.max(1, Number(quantity || item.quantity || 1));
+  item.entries = entries;
+  item.os = firstEntry.os;
+  item.protocol = firstEntry.protocol;
+  item.testType = firstEntry.testType;
+  item.quantity = entries.length;
   item.history.push(historyLine("GRD editado por Michele"));
   saveData();
   showToast("GRD editado.");
+  render();
+}
+
+function deleteGrd(id) {
+  if (currentUser().role !== "admin") {
+    showToast("Somente Michele pode apagar GRD.");
+    return;
+  }
+  const item = findGrd(id);
+  if (!item) return;
+  if (!confirm(`Apagar o GRD ${item.os || item.protocol || ""}?`)) return;
+  data.grds = (data.grds || []).filter((grd) => grd.id !== id);
+  saveData();
+  showToast("GRD apagado.");
   render();
 }
 
@@ -2219,6 +2626,36 @@ function editScheduleItem(scheduleId) {
   editHeItem(schedule.id, schedule.items[selected - 1].id);
 }
 
+function deleteSchedule(id) {
+  if (currentUser().role !== "admin") {
+    showToast("Somente Michele pode apagar HE.");
+    return;
+  }
+  const schedule = data.schedules.find((item) => item.id === id);
+  if (!schedule) return;
+  if (!confirm(`Apagar a HE/programacao de ${formatDate(schedule.date)}?`)) return;
+  data.schedules = data.schedules.filter((item) => item.id !== id);
+  saveData();
+  showToast("HE apagada.");
+  render();
+}
+
+function deleteHeItem(scheduleId, itemId) {
+  if (currentUser().role !== "admin") {
+    showToast("Somente Michele pode apagar HE.");
+    return;
+  }
+  const { schedule, item } = findItem(scheduleId, itemId);
+  if (!schedule || !item) return;
+  if (!confirm(`Apagar HE de ${item.employeeName}?`)) return;
+  schedule.items = schedule.items.filter((entry) => entry.id !== itemId);
+  if (!schedule.items.length) data.schedules = data.schedules.filter((entry) => entry.id !== scheduleId);
+  else schedule.history.push(historyLine(`HE apagada: ${item.employeeName}`));
+  saveData();
+  showToast("Item de HE apagado.");
+  render();
+}
+
 function addCatalog(key, fd) {
   const name = String(fd.get("name") || "").trim();
   if (!name) return;
@@ -2309,6 +2746,8 @@ function saveSettings(fd) {
     "micheleEmail",
     "marllonEmail",
     "jefersonEmail",
+    "homeSummaryTitle",
+    "homeSummaryMode",
     "recentTitle",
     "recentPosition"
   ];
@@ -2317,6 +2756,15 @@ function saveSettings(fd) {
   });
   data.settings.recentVisible = fd.get("recentVisible") === "true";
   data.settings.showHomeImage = fd.get("showHomeImage") === "true";
+  data.settings.homeSummaryCards = [...document.querySelectorAll("[data-home-summary-card-row]")].map((row, index) => ({
+    id: row.dataset.id || uid(),
+    order: Number(row.querySelector('[name="homeSummaryCardOrder"]').value || index + 1),
+    label: row.querySelector('[name="homeSummaryCardLabel"]').value.trim() || "Novo farol",
+    type: row.querySelector('[name="homeSummaryCardType"]').value,
+    color: row.querySelector('[name="homeSummaryCardColor"]').value,
+    icon: row.querySelector('[name="homeSummaryCardIcon"]').value.trim(),
+    visible: row.querySelector('[name="homeSummaryCardVisible"]').value === "true"
+  }));
   data.settings.dashboardCards = [...document.querySelectorAll("[data-dashboard-card-row]")].map((row, index) => ({
     id: row.dataset.id || uid(),
     order: Number(row.querySelector('[name="cardOrder"]').value || index + 1),
@@ -2548,6 +2996,7 @@ function renderItemsTable(items, compact = false, approval = false, fix = false)
             ${compact ? "" : `<td>${esc(item.reason || "")}${item.rejectedReason ? `<br><strong>Motivo:</strong> ${esc(item.rejectedReason)}` : ""}</td>`}
             <td class="btn-row">
               ${currentUser().role === "admin" ? `<button class="btn icon-action" title="Editar HE" data-action="editHeItem" data-schedule-id="${item.scheduleId}" data-item-id="${item.id}">✎ Editar</button>` : ""}
+              ${currentUser().role === "admin" ? `<button class="btn danger" data-action="deleteHeItem" data-schedule-id="${item.scheduleId}" data-item-id="${item.id}">Apagar</button>` : ""}
               <button class="btn icon-action" title="Exportar HE" data-action="exportHeItemChoice" data-schedule-id="${item.scheduleId}" data-item-id="${item.id}">⇩ Exportar</button>
               ${approval ? `<button class="btn success" data-action="approveItem" data-schedule-id="${item.scheduleId}" data-item-id="${item.id}">Aprovar</button><button class="btn danger" data-action="rejectItem" data-schedule-id="${item.scheduleId}" data-item-id="${item.id}">Reprovar</button>` : ""}
               ${fix ? `<button class="btn primary" data-action="fixItem" data-schedule-id="${item.scheduleId}" data-item-id="${item.id}">Corrigir</button>` : ""}
@@ -2601,6 +3050,7 @@ function statusBadge(status) {
 function statusLabel(status) {
   return {
     draft: "Rascunho",
+    waiting_michele: "Aguardando Michele",
     waiting_marllon: "Aguardando Marllon",
     rejected_marllon: "Reprovado por Marllon",
     waiting_jeferson: "Aguardando Jeferson",
