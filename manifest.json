@@ -1,0 +1,17 @@
+{
+  "name": "Facilita",
+  "short_name": "Facilita",
+  "description": "Gestao inteligente de HE e GRD",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f5f7fb",
+  "theme_color": "#0057b8",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
