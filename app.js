@@ -172,6 +172,7 @@ function normalizeData(value) {
     current.quantity = current.entries.length || current.quantity || 1;
     if (current.micheleSignedAt == null && current.marllonSignedAt) current.micheleSignedAt = current.marllonSignedAt;
     if (current.micheleComment == null && current.marllonComment) current.micheleComment = current.marllonComment;
+    current.status = aggregateGrdStatus(current);
     return current;
   });
   value.settings.scheduleCards = mergeConfigRows(defaultData.settings.scheduleCards, value.settings.scheduleCards || []);
@@ -298,15 +299,15 @@ function canSee(view, user) {
   const map = {
     dashboard: ["admin", "marllon", "jeferson", "viewer"],
     heDashboard: ["admin", "marllon", "jeferson"],
-    grdDashboard: ["admin", "jeferson"],
+    grdDashboard: ["admin", "marllon", "jeferson", "viewer"],
     waterDashboard: ["admin"],
     newSchedule: ["admin"],
     newGrd: ["admin"],
-    grdView: ["admin", "jeferson"],
+    grdView: ["admin", "marllon", "jeferson", "viewer"],
     approvals: ["marllon", "jeferson"],
     rejected: ["admin"],
-    schedules: ["admin", "marllon", "jeferson", "viewer"],
-    reports: ["admin", "marllon", "jeferson", "viewer"],
+    schedules: ["admin", "marllon", "jeferson"],
+    reports: ["admin", "marllon", "jeferson"],
     employees: ["admin"],
     functions: ["admin"],
     users: ["admin"],
@@ -462,7 +463,7 @@ function renderView(user) {
   const screens = {
     dashboard: renderDashboardV2,
     heDashboard: renderHeDashboard,
-    grdDashboard: renderGrdManager,
+    grdDashboard: renderGrdManagerV2,
     newGrd: renderGrdForm,
     grdView: renderGrdViewer,
     waterDashboard: renderWaterDashboard,
@@ -965,6 +966,119 @@ function renderGrdManager() {
   `;
 }
 
+function renderGrdManagerV2() {
+  const allRows = grdEntries();
+  const rows = filteredGrdEntries();
+  const holderCount = (holder) => rows.filter(({ entry }) => normalizeText(entry.currentHolder) === normalizeText(holder)).length;
+  const pending = rows.filter(({ entry }) => String(entry.status).startsWith("pending")).length;
+  const waitingScan = rows.filter(({ entry }) => entry.status === "validated_jeferson").length;
+  const done = rows.filter(({ entry }) => entry.status === "done").length;
+  const tracked = rows.filter(({ entry }) => entry.tracked === true).length;
+  const checked = rows.filter(({ entry }) => entry.checked === true).length;
+  const max = Math.max(rows.length, 1);
+  return `
+    <div class="page-head">
+      <div><h1>GRD</h1><p>Fluxo por OS: recebimento, validacao, assinatura, digitalizacao, arquivo e gargalos.</p></div>
+      <div class="btn-row">
+        ${currentUser().role === "admin" ? `<button class="btn primary" data-action="goNewGrd">+ Lancar GRD</button><button class="btn" data-action="editLayout">Editar layout</button>` : ""}
+      </div>
+    </div>
+    ${renderGrdFilters(allRows.length, rows.length)}
+    <section class="grid three">
+      ${metric("OS filtradas", rows.length, "gray", "□")}
+      ${metric("Com Michele", holderCount("Michele"), "yellow", "M")}
+      ${metric("Com Marllon", holderCount("Marllon"), "yellow", "M")}
+      ${metric("Com Jeferson", holderCount("Jeferson"), "yellow", "J")}
+      ${metric("Pendentes", pending, "red", "!")}
+      ${metric("Aguard. digitalizacao", waitingScan, "blue", "D")}
+      ${metric("Concluidas", done, "green", "✓")}
+      ${metric("Rastreadas", tracked, "blue", "R")}
+      ${metric("Conferidas", checked, "green", "C")}
+    </section>
+    <section class="grid two chart-row">
+      ${barChart("Farol por responsavel", [
+        ["Michele", holderCount("Michele"), "yellow", max],
+        ["Marllon", holderCount("Marllon"), "yellow", max],
+        ["Jeferson", holderCount("Jeferson"), "yellow", max],
+        ["Pendentes", pending, "red", max],
+        ["Concluidas", done, "green", max]
+      ])}
+      ${barChart("Prazos", grdDeadlineRowsV2(rows))}
+      ${barChart("Por tipo de ensaio", grdTypeRows(rows))}
+    </section>
+    <section class="card" style="margin-top:16px">
+      <div class="section-title">
+        <div><h3>Registros por OS</h3><span class="muted">Busca OS, protocolo, tipo de ensaio, responsavel e gargalo</span></div>
+        ${currentUser().role === "admin" ? `<button class="btn primary" data-action="goNewGrd">Novo GRD</button>` : ""}
+      </div>
+      ${renderGrdTableV2(rows)}
+    </section>
+  `;
+}
+
+function renderGrdFilters(total, filtered) {
+  const filters = currentGrdFilters();
+  const statusOptions = [
+    ["all", "Todos os status"],
+    ["with_michele", "Com Michele"],
+    ["awaiting_marllon_receipt", "Aguard. recebimento Marllon"],
+    ["with_marllon", "Com Marllon"],
+    ["validated_marllon", "Validada por Marllon"],
+    ["pending_marllon", "Pendencia Marllon"],
+    ["awaiting_jeferson_receipt", "Aguard. recebimento Jeferson"],
+    ["with_jeferson", "Com Jeferson"],
+    ["validated_jeferson", "Validada por Jeferson"],
+    ["pending_jeferson", "Pendencia Jeferson"],
+    ["scanned", "Digitalizada"],
+    ["done", "Concluida"]
+  ];
+  return `
+    <section class="card grd-filters">
+      <div class="section-title">
+        <div><h3>Filtros e busca</h3><span class="muted">${filtered} de ${total} OS exibidas</span></div>
+        <div class="btn-row">
+          <button class="btn primary" data-action="applyGrdFilters">Aplicar filtros</button>
+          <button class="btn" data-action="resetGrdFilters">Limpar</button>
+        </div>
+      </div>
+      <div class="form-grid compact" id="grdFilters">
+        <div class="field">
+          <label>Periodo</label>
+          <select name="grdFilterPeriod">
+            <option value="month" ${filters.period === "month" ? "selected" : ""}>Mes</option>
+            <option value="day" ${filters.period === "day" ? "selected" : ""}>Dia</option>
+            <option value="custom" ${filters.period === "custom" ? "selected" : ""}>Periodo especifico</option>
+          </select>
+        </div>
+        ${input("grdFilterDate", "Dia", filters.date, "", "date")}
+        ${input("grdFilterMonth", "Mes", filters.month, "", "month")}
+        ${input("grdFilterStart", "Inicio", filters.start, "", "date")}
+        ${input("grdFilterEnd", "Fim", filters.end, "", "date")}
+        <div class="field">
+          <label>Responsavel atual</label>
+          <select name="grdFilterHolder">
+            ${[["all", "Todos"], ["Michele", "Michele"], ["Marllon", "Marllon"], ["Jeferson", "Jeferson"], ["Arquivo", "Arquivo"]].map(([value, label]) => `<option value="${value}" ${filters.holder === value ? "selected" : ""}>${label}</option>`).join("")}
+          </select>
+        </div>
+        <div class="field">
+          <label>Status</label>
+          <select name="grdFilterStatus">
+            ${statusOptions.map(([value, label]) => `<option value="${value}" ${filters.status === value ? "selected" : ""}>${label}</option>`).join("")}
+          </select>
+        </div>
+        <div class="field">
+          <label>Tipo de ensaio</label>
+          <select name="grdFilterTestType">
+            <option value="all">Todos</option>
+            ${grdTestOptions().map((name) => `<option value="${esc(name)}" ${filters.testType === name ? "selected" : ""}>${esc(name)}</option>`).join("")}
+          </select>
+        </div>
+        ${input("grdFilterQuery", "Buscar OS, protocolo, GRD ou empresa", filters.query)}
+      </div>
+    </section>
+  `;
+}
+
 function renderGrdForm() {
   const today = new Date().toISOString().slice(0, 10);
   return `
@@ -1072,6 +1186,52 @@ function grdDeadlineRows(items) {
   return [["No prazo", rows.ok, "green", max], ["48h perto", rows.near, "yellow", max], ["Vencidos", rows.late, "red", max]];
 }
 
+function renderGrdTableV2(rows) {
+  return `
+    <div class="table-wrap">
+      <table class="grd-os-table">
+        <thead><tr><th>GRD</th><th>OS</th><th>Protocolo / ensaio</th><th>Responsavel</th><th>Status</th><th>Gargalo</th><th>Acoes</th></tr></thead>
+        <tbody>
+          ${rows.map(({ grd, entry }) => `
+            <tr>
+              <td>${formatDate(grd.receivedDate)}<br><span class="muted">${esc(grd.company)}<br>${esc(grd.id.slice(-6).toUpperCase())}</span></td>
+              <td><strong>${esc(entry.os || "-")}</strong></td>
+              <td>${esc(entry.protocol || "-")}<br><span class="muted">${esc(entry.testType || "-")}</span></td>
+              <td>${esc(entry.currentHolder || "-")}${entry.locationNote ? `<br><span class="muted">${esc(entry.locationNote)}</span>` : ""}</td>
+              <td>${grdEntryBadge(entry.status)}${entry.pendingReason ? `<br><span class="muted">${esc(entry.pendingReason)}</span>` : ""}</td>
+              <td>${daysInCurrentStep(entry, grd)} dia(s)<br><span class="muted">desde ${formatDate(String(grdStatusDate(entry) || grd.receivedDate || "").slice(0, 10)) || "-"}</span></td>
+              <td class="btn-row"><button class="btn" data-action="viewGrd" data-id="${grd.id}">Abrir</button></td>
+            </tr>
+          `).join("") || `<tr><td colspan="7">Nenhuma OS encontrada para os filtros.</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function grdDeadlineRowsV2(rows) {
+  const counters = { ok: 0, near: 0, late: 0 };
+  rows.filter(({ entry }) => entry.status !== "done").forEach(({ grd, entry }) => {
+    const days = daysInCurrentStep(entry, grd);
+    if (days >= 3) counters.late += 1;
+    else if (days >= 1) counters.near += 1;
+    else counters.ok += 1;
+  });
+  const max = Math.max(counters.ok, counters.near, counters.late, 1);
+  return [["No prazo", counters.ok, "green", max], ["Atencao", counters.near, "yellow", max], ["Vencidas", counters.late, "red", max]];
+}
+
+function grdTypeRows(rows) {
+  const totals = {};
+  rows.forEach(({ entry }) => {
+    const key = entry.testType || "Sem tipo";
+    totals[key] = (totals[key] || 0) + 1;
+  });
+  const list = Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const max = Math.max(...list.map(([, value]) => value), 1);
+  return list.length ? list.map(([label, value], index) => [label, value, ["green", "blue", "yellow", "red", "gray", "green"][index], max]) : [["Sem dados", 0, "gray", 1]];
+}
+
 function grdTestOptions() {
   return [
     "Caracterizacao",
@@ -1163,12 +1323,29 @@ function normalizeGrdEntriesV2(item) {
   return oldEntries.map((entry, index) => {
     const protocol = entry.protocol || item.protocol || "";
     const testType = entry.testType || entry.description || item.testType || "";
+    const status = entry.status || legacyGrdEntryStatus(item);
+    const holder = entry.currentHolder || grdHolderFromStatus(status);
     return {
       id: entry.id || uid(),
       os: entry.os || item.os || `Item ${index + 1}`,
       protocol,
       testType,
-      description: [protocol, testType].filter(Boolean).join(" - ") || entry.description || "-"
+      description: [protocol, testType].filter(Boolean).join(" - ") || entry.description || "-",
+      status,
+      currentHolder: holder,
+      locationNote: entry.locationNote || "",
+      pendingReason: entry.pendingReason || "",
+      marllonDeliveredAt: entry.marllonDeliveredAt || item.marllonDeliveredAt || "",
+      marllonReceiptAt: entry.marllonReceiptAt || "",
+      marllonReturnedAt: entry.marllonReturnedAt || item.marllonSignedAt || "",
+      jefersonDeliveredAt: entry.jefersonDeliveredAt || item.jefersonDeliveredAt || "",
+      jefersonReceiptAt: entry.jefersonReceiptAt || "",
+      jefersonReturnedAt: entry.jefersonReturnedAt || item.jefersonSignedAt || "",
+      scannedAt: entry.scannedAt || item.scannedAt || "",
+      archivedAt: entry.archivedAt || item.archivedAt || "",
+      tracked: entry.tracked ?? item.tracked ?? null,
+      checked: entry.checked ?? item.checked ?? null,
+      history: Array.isArray(entry.history) ? entry.history : []
     };
   });
 }
@@ -1176,11 +1353,129 @@ function normalizeGrdEntriesV2(item) {
 parseGrdEntries = parseGrdEntriesV2;
 normalizeGrdEntries = normalizeGrdEntriesV2;
 
+function legacyGrdEntryStatus(item) {
+  if (item.status === "archived" || item.archived) return "done";
+  if (item.scanned) return "scanned";
+  if (item.status === "signed") return "validated_jeferson";
+  if (item.status === "waiting_jeferson") return "awaiting_jeferson_receipt";
+  if (item.status === "pending") return item.pendingBy && String(item.pendingBy).toLowerCase().includes("jeferson") ? "pending_jeferson" : "pending_marllon";
+  return "with_michele";
+}
+
+function grdHolderFromStatus(status) {
+  if (String(status).includes("marllon")) return "Marllon";
+  if (String(status).includes("jeferson")) return "Jeferson";
+  if (["scanned", "done"].includes(status)) return "Arquivo";
+  return "Michele";
+}
+
+function ensureGrdItem(item) {
+  item.entries = normalizeGrdEntries(item);
+  item.quantity = item.entries.length;
+  item.status = aggregateGrdStatus(item);
+  item.history = Array.isArray(item.history) ? item.history : [];
+  return item;
+}
+
+function aggregateGrdStatus(item) {
+  const statuses = normalizeGrdEntries(item).map((entry) => entry.status);
+  if (!statuses.length) return "empty";
+  if (statuses.every((status) => status === "done")) return "archived";
+  if (statuses.some((status) => String(status).startsWith("pending"))) return "pending";
+  if (statuses.some((status) => status === "with_jeferson" || status === "awaiting_jeferson_receipt")) return "waiting_jeferson";
+  if (statuses.some((status) => status === "with_marllon" || status === "awaiting_marllon_receipt")) return "waiting_marllon";
+  if (statuses.some((status) => status === "with_michele" || status === "validated_marllon")) return "waiting_michele";
+  if (statuses.some((status) => status === "validated_jeferson")) return "signed";
+  if (statuses.some((status) => status === "scanned")) return "signed";
+  return statuses[0];
+}
+
+function grdEntries() {
+  return (data.grds || []).flatMap((grd) => {
+    ensureGrdItem(grd);
+    return grd.entries.map((entry) => ({ grd, entry }));
+  });
+}
+
+function grdEntryStatusLabel(status) {
+  return {
+    with_michele: "Com Michele",
+    awaiting_marllon_receipt: "Aguard. recebimento Marllon",
+    with_marllon: "Com Marllon",
+    validated_marllon: "Validada por Marllon",
+    pending_marllon: "Pendencia Marllon",
+    awaiting_jeferson_receipt: "Aguard. recebimento Jeferson",
+    with_jeferson: "Com Jeferson",
+    validated_jeferson: "Validada por Jeferson",
+    pending_jeferson: "Pendencia Jeferson",
+    scanned: "Digitalizada",
+    done: "Concluida"
+  }[status] || statusLabel(status);
+}
+
+function grdEntryBadge(status) {
+  const color = String(status).startsWith("pending") ? "red" : ["done", "scanned", "validated_jeferson"].includes(status) ? "green" : String(status).startsWith("awaiting") ? "blue" : "yellow";
+  return `<span class="badge ${color}">${grdEntryStatusLabel(status)}</span>`;
+}
+
+function grdStatusDate(entry) {
+  return entry.archivedAt || entry.scannedAt || entry.jefersonReturnedAt || entry.jefersonReceiptAt || entry.jefersonDeliveredAt || entry.marllonReturnedAt || entry.marllonReceiptAt || entry.marllonDeliveredAt || "";
+}
+
+function daysInCurrentStep(entry, grd) {
+  const raw = grdStatusDate(entry) || grd.receivedDate || grd.createdAt;
+  if (!raw) return 0;
+  const date = new Date(String(raw).length <= 10 ? `${raw}T00:00:00` : raw);
+  if (Number.isNaN(date.getTime())) return 0;
+  return Math.max(0, Math.floor((new Date() - date) / 86400000));
+}
+
+function isGrdEntryInPeriod(grd, entry, filters) {
+  const base = String(grd.receivedDate || grd.createdAt || "").slice(0, 10);
+  if (!base) return true;
+  if (filters.period === "day") return base === filters.date;
+  if (filters.period === "month") return base.slice(0, 7) === filters.month;
+  if (filters.period === "custom") return (!filters.start || base >= filters.start) && (!filters.end || base <= filters.end);
+  return true;
+}
+
+function currentGrdFilters() {
+  const now = new Date();
+  return {
+    period: data.settings.grdFilterPeriod || "month",
+    date: data.settings.grdFilterDate || now.toISOString().slice(0, 10),
+    month: data.settings.grdFilterMonth || now.toISOString().slice(0, 7),
+    start: data.settings.grdFilterStart || `${now.getFullYear()}-01-01`,
+    end: data.settings.grdFilterEnd || now.toISOString().slice(0, 10),
+    holder: data.settings.grdFilterHolder || "all",
+    status: data.settings.grdFilterStatus || "all",
+    testType: data.settings.grdFilterTestType || "all",
+    query: data.settings.grdFilterQuery || ""
+  };
+}
+
+function filteredGrdEntries() {
+  const filters = currentGrdFilters();
+  const query = normalizeText(filters.query);
+  return grdEntries().filter(({ grd, entry }) => {
+    if (!isGrdEntryInPeriod(grd, entry, filters)) return false;
+    if (filters.holder !== "all" && normalizeText(entry.currentHolder) !== normalizeText(filters.holder)) return false;
+    if (filters.status !== "all" && entry.status !== filters.status) return false;
+    if (filters.testType !== "all" && entry.testType !== filters.testType) return false;
+    if (query) {
+      const haystack = normalizeText([entry.os, entry.protocol, entry.testType, grd.company, grd.id].join(" "));
+      if (!haystack.includes(query)) return false;
+    }
+    return true;
+  });
+}
+
 function renderGrdViewer() {
   const item = findGrd(currentGrdViewId);
   if (!item) {
     return `<div class="page-head"><div><h1>GRD nao encontrado</h1><p>O registro selecionado nao esta mais disponivel.</p></div><button class="btn" data-action="openView" data-view="grdDashboard">Voltar</button></div>`;
   }
+  ensureGrdItem(item);
   const entries = normalizeGrdEntries(item);
   const pages = chunk(entries, 13);
   return `
@@ -1191,10 +1486,92 @@ function renderGrdViewer() {
         <button class="btn primary" data-action="printGrd">Imprimir A4</button>
       </div>
     </div>
+    ${renderGrdFlowPanel(item)}
+    ${renderGrdOsWorkPanel(item)}
     <div class="grd-print-wrap">
       ${pages.map((pageEntries, pageIndex) => renderGrdA4Page(item, pageEntries, pageIndex + 1, pages.length)).join("")}
     </div>
   `;
+}
+
+function renderGrdFlowPanel(item) {
+  const entries = normalizeGrdEntries(item);
+  const role = currentUser().role;
+  const canAdmin = role === "admin";
+  const canMarllon = role === "marllon";
+  const canJeferson = role === "jeferson";
+  return `
+    <section class="card grd-flow-panel">
+      <div class="section-title">
+        <div><h3>Fluxo e evidencias</h3><span class="muted">Recebimento e devolucao ficam registrados com data e hora.</span></div>
+      </div>
+      <div class="flow-steps">
+        ${["Michele", "Marllon", "Jeferson", "Digitalizacao", "Arquivo"].map((label) => `<span>${label}</span>`).join("")}
+      </div>
+      <div class="btn-row">
+        ${canAdmin && entries.some((entry) => ["with_michele", "pending_marllon"].includes(entry.status)) ? `<button class="btn primary" data-action="deliverGrd" data-id="${item.id}" data-person="marllon" data-mode="presencial">Entregar p/ Marllon</button><button class="btn" data-action="deliverGrd" data-id="${item.id}" data-person="marllon" data-mode="mesa">Deixei na mesa Marllon</button>` : ""}
+        ${canMarllon && entries.some((entry) => entry.status === "awaiting_marllon_receipt") ? `<button class="btn success" data-action="confirmGrdReceipt" data-id="${item.id}" data-person="marllon">Confirmo recebimento de todas</button>` : ""}
+        ${canAdmin && entries.some((entry) => entry.status === "validated_marllon") ? `<button class="btn primary" data-action="deliverGrd" data-id="${item.id}" data-person="jeferson" data-mode="presencial">Entregar p/ Jeferson</button><button class="btn" data-action="deliverGrd" data-id="${item.id}" data-person="jeferson" data-mode="mesa">Deixei na mesa Jeferson</button>` : ""}
+        ${canJeferson && entries.some((entry) => entry.status === "awaiting_jeferson_receipt") ? `<button class="btn success" data-action="confirmGrdReceipt" data-id="${item.id}" data-person="jeferson">Confirmo recebimento de todas</button>` : ""}
+      </div>
+      <div class="timeline compact-timeline">
+        ${(item.history || []).slice(-8).reverse().map((line) => `<div>${esc(line)}</div>`).join("") || `<div>Nenhum evento registrado ainda.</div>`}
+      </div>
+    </section>
+  `;
+}
+
+function renderGrdOsWorkPanel(item) {
+  const entries = normalizeGrdEntries(item);
+  const role = currentUser().role;
+  const hasToScan = entries.some((entry) => entry.status === "validated_jeferson");
+  const hasToArchive = entries.some((entry) => entry.status === "scanned");
+  return `
+    <section class="card grd-os-panel">
+      <div class="section-title">
+        <div><h3>OS do GRD</h3><span class="muted">Selecione todas ou apenas algumas para validar, apontar pendencia, digitalizar ou concluir.</span></div>
+        <div class="btn-row"><button class="btn" data-action="selectAllGrdOs">Selecionar todas</button></div>
+      </div>
+      <div class="table-wrap">
+        <table class="grd-os-table">
+          <thead><tr><th></th><th>OS</th><th>Protocolo</th><th>Tipo</th><th>Responsavel</th><th>Status</th><th>Datas</th></tr></thead>
+          <tbody>
+            ${entries.map((entry) => `
+              <tr>
+                <td><input type="checkbox" data-grd-os-select value="${esc(entry.id)}"></td>
+                <td><strong>${esc(entry.os)}</strong></td>
+                <td>${esc(entry.protocol || "-")}</td>
+                <td>${esc(entry.testType || "-")}</td>
+                <td>${esc(entry.currentHolder || "-")}${entry.locationNote ? `<br><span class="muted">${esc(entry.locationNote)}</span>` : ""}</td>
+                <td>${grdEntryBadge(entry.status)}${entry.pendingReason ? `<br><span class="muted">${esc(entry.pendingReason)}</span>` : ""}</td>
+                <td>${renderGrdEntryDates(entry)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+      <div class="btn-row grd-actions">
+        ${role === "marllon" ? `<button class="btn success" data-action="validateSelectedGrdOs" data-id="${item.id}" data-person="marllon">Validar selecionadas</button><button class="btn danger" data-action="pendSelectedGrdOs" data-id="${item.id}" data-person="marllon">Pendencia selecionadas</button>` : ""}
+        ${role === "jeferson" ? `<button class="btn success" data-action="validateSelectedGrdOs" data-id="${item.id}" data-person="jeferson">Validar selecionadas</button><button class="btn danger" data-action="pendSelectedGrdOs" data-id="${item.id}" data-person="jeferson">Pendencia selecionadas</button>` : ""}
+        ${role === "admin" && hasToScan ? `<button class="btn" data-action="scanSelectedGrdOs" data-id="${item.id}">Marcar digitalizadas</button>` : ""}
+        ${role === "admin" && hasToArchive ? `<button class="btn success" data-action="archiveSelectedGrdOs" data-id="${item.id}">Arquivar/concluir selecionadas</button>` : ""}
+      </div>
+    </section>
+  `;
+}
+
+function renderGrdEntryDates(entry) {
+  const rows = [
+    ["Marllon envio", entry.marllonDeliveredAt],
+    ["Marllon recebeu", entry.marllonReceiptAt],
+    ["Marllon devolveu", entry.marllonReturnedAt],
+    ["Jeferson envio", entry.jefersonDeliveredAt],
+    ["Jeferson recebeu", entry.jefersonReceiptAt],
+    ["Jeferson devolveu", entry.jefersonReturnedAt],
+    ["Digitalizado", entry.scannedAt],
+    ["Arquivado", entry.archivedAt]
+  ].filter(([, value]) => value);
+  return rows.length ? rows.map(([label, value]) => `<span class="date-chip">${label}: ${formatDateTime(value)}</span>`).join("") : `<span class="muted">Sem datas</span>`;
 }
 
 function renderGrdA4Page(item, entries, pageNumber, totalPages) {
@@ -2188,6 +2565,15 @@ function handleAction(event, action, dataset, user) {
   if (action === "archiveGrd") archiveGrd(dataset.id);
   if (action === "editGrd") editGrd(dataset.id);
   if (action === "deleteGrd") deleteGrd(dataset.id);
+  if (action === "applyGrdFilters") applyGrdFilters();
+  if (action === "resetGrdFilters") resetGrdFilters();
+  if (action === "deliverGrd") deliverGrd(dataset.id, dataset.person, dataset.mode);
+  if (action === "confirmGrdReceipt") confirmGrdReceipt(dataset.id, dataset.person, user);
+  if (action === "validateSelectedGrdOs") validateSelectedGrdOs(dataset.id, dataset.person, user);
+  if (action === "pendSelectedGrdOs") pendSelectedGrdOs(dataset.id, dataset.person, user);
+  if (action === "scanSelectedGrdOs") scanSelectedGrdOs(dataset.id);
+  if (action === "archiveSelectedGrdOs") archiveSelectedGrdOs(dataset.id);
+  if (action === "selectAllGrdOs") selectAllGrdOs();
   if (action === "viewGrd") {
     currentGrdViewId = dataset.id;
     currentView = "grdView";
@@ -2270,6 +2656,15 @@ function saveGrd(fd) {
     return;
   }
   const firstEntry = entries[0];
+  const createdAt = new Date().toISOString();
+  const preparedEntries = entries.map((entry) => ({
+    ...entry,
+    status: "with_michele",
+    currentHolder: "Michele",
+    locationNote: "",
+    pendingReason: "",
+    history: [historyLine("OS recebida por Michele")]
+  }));
   data.grds.push({
     id: uid(),
     company: fd.get("company"),
@@ -2281,14 +2676,14 @@ function saveGrd(fd) {
     sentDate: fd.get("sentDate"),
     returnedDate: "",
     notes: fd.get("notes") || "",
-    entries,
+    entries: preparedEntries,
     status: "waiting_michele",
     scanned: false,
     archived: false,
     tracked: null,
     checked: null,
     pendingReason: "",
-    createdAt: new Date().toISOString(),
+    createdAt,
     createdBy: currentUser().name,
     history: [historyLine("GRD enviado para assinatura de Michele")]
   });
@@ -2422,6 +2817,265 @@ function deleteGrd(id) {
   data.grds = (data.grds || []).filter((grd) => grd.id !== id);
   saveData();
   showToast("GRD apagado.");
+  render();
+}
+
+function applyGrdFilters() {
+  const wrap = document.getElementById("grdFilters");
+  if (!wrap) return;
+  const fd = new FormData();
+  wrap.querySelectorAll("input, select").forEach((el) => fd.set(el.name, el.value));
+  ["grdFilterPeriod", "grdFilterDate", "grdFilterMonth", "grdFilterStart", "grdFilterEnd", "grdFilterHolder", "grdFilterStatus", "grdFilterTestType", "grdFilterQuery"].forEach((key) => {
+    data.settings[key] = fd.get(key) || "";
+  });
+  saveData();
+  render();
+}
+
+function resetGrdFilters() {
+  ["grdFilterPeriod", "grdFilterDate", "grdFilterMonth", "grdFilterStart", "grdFilterEnd", "grdFilterHolder", "grdFilterStatus", "grdFilterTestType", "grdFilterQuery"].forEach((key) => delete data.settings[key]);
+  saveData();
+  render();
+}
+
+function selectedGrdEntryIds() {
+  return [...document.querySelectorAll("[data-grd-os-select]:checked")].map((input) => input.value);
+}
+
+function selectAllGrdOs() {
+  document.querySelectorAll("[data-grd-os-select]").forEach((input) => {
+    input.checked = true;
+  });
+}
+
+function selectedOrAllEntries(item, allowedStatuses = []) {
+  const selected = selectedGrdEntryIds();
+  const entries = normalizeGrdEntries(item);
+  const chosen = selected.length ? entries.filter((entry) => selected.includes(entry.id)) : entries;
+  return allowedStatuses.length ? chosen.filter((entry) => allowedStatuses.includes(entry.status)) : chosen;
+}
+
+function updateGrdAfterEntries(item) {
+  item.quantity = item.entries.length;
+  item.status = aggregateGrdStatus(item);
+  const first = item.entries[0] || {};
+  item.os = first.os || item.os;
+  item.protocol = first.protocol || item.protocol;
+  item.testType = first.testType || item.testType;
+}
+
+function deliverGrd(id, person, mode) {
+  if (currentUser().role !== "admin") {
+    showToast("Somente Michele pode registrar entrega.");
+    return;
+  }
+  const item = findGrd(id);
+  if (!item) return;
+  ensureGrdItem(item);
+  const target = person === "jeferson" ? "Jeferson" : "Marllon";
+  const toStatus = person === "jeferson" ? "awaiting_jeferson_receipt" : "awaiting_marllon_receipt";
+  const allowed = person === "jeferson" ? ["validated_marllon"] : ["with_michele", "pending_marllon"];
+  const now = new Date().toISOString();
+  let count = 0;
+  item.entries.forEach((entry) => {
+    if (!allowed.includes(entry.status)) return;
+    entry.status = toStatus;
+    entry.currentHolder = target;
+    entry.locationNote = mode === "mesa" ? `Deixado na mesa de ${target}` : "Entrega presencial";
+    if (person === "jeferson") entry.jefersonDeliveredAt = now;
+    else entry.marllonDeliveredAt = now;
+    entry.history = entry.history || [];
+    entry.history.push(historyLine(`${entry.os} entregue para ${target}: ${entry.locationNote}`));
+    count += 1;
+  });
+  if (!count) {
+    showToast(`Nao ha OS pronta para entregar para ${target}.`);
+    return;
+  }
+  item.history.push(historyLine(`${count} OS entregues para ${target} (${mode === "mesa" ? "mesa" : "presencial"})`));
+  updateGrdAfterEntries(item);
+  saveData();
+  showToast(`${count} OS aguardando confirmacao de recebimento por ${target}.`);
+  render();
+}
+
+function confirmGrdReceipt(id, person, user) {
+  const item = findGrd(id);
+  if (!item) return;
+  ensureGrdItem(item);
+  const isMarllon = person === "marllon" && user.role === "marllon";
+  const isJeferson = person === "jeferson" && user.role === "jeferson";
+  if (!isMarllon && !isJeferson) {
+    showToast("Este recebimento precisa ser confirmado pela pessoa correta.");
+    return;
+  }
+  const fromStatus = person === "jeferson" ? "awaiting_jeferson_receipt" : "awaiting_marllon_receipt";
+  const toStatus = person === "jeferson" ? "with_jeferson" : "with_marllon";
+  const now = new Date().toISOString();
+  let count = 0;
+  item.entries.forEach((entry) => {
+    if (entry.status !== fromStatus) return;
+    entry.status = toStatus;
+    entry.currentHolder = person === "jeferson" ? "Jeferson" : "Marllon";
+    entry.locationNote = "";
+    if (person === "jeferson") entry.jefersonReceiptAt = now;
+    else entry.marllonReceiptAt = now;
+    entry.history = entry.history || [];
+    entry.history.push(historyLine(`${entry.os} recebida por ${user.name}`));
+    count += 1;
+  });
+  if (!count) {
+    showToast("Nao ha OS aguardando essa confirmacao.");
+    return;
+  }
+  item.history.push(historyLine(`${user.name} confirmou recebimento de ${count} OS`));
+  updateGrdAfterEntries(item);
+  saveData();
+  showToast(`Recebimento confirmado para ${count} OS.`);
+  render();
+}
+
+function validateSelectedGrdOs(id, person, user) {
+  const item = findGrd(id);
+  if (!item) return;
+  ensureGrdItem(item);
+  const isMarllon = person === "marllon" && user.role === "marllon";
+  const isJeferson = person === "jeferson" && user.role === "jeferson";
+  if (!isMarllon && !isJeferson) {
+    showToast("Somente o aprovador correto pode validar estas OS.");
+    return;
+  }
+  const fromStatus = person === "jeferson" ? "with_jeferson" : "with_marllon";
+  const toStatus = person === "jeferson" ? "validated_jeferson" : "validated_marllon";
+  const now = new Date().toISOString();
+  const selected = selectedOrAllEntries(item, [fromStatus]);
+  if (!selected.length) {
+    showToast("Selecione OS que estejam com voce para validar.");
+    return;
+  }
+  selected.forEach((entry) => {
+    entry.status = toStatus;
+    entry.currentHolder = "Michele";
+    entry.locationNote = "Devolvido validado";
+    entry.pendingReason = "";
+    if (person === "jeferson") entry.jefersonReturnedAt = now;
+    else entry.marllonReturnedAt = now;
+    entry.history = entry.history || [];
+    entry.history.push(historyLine(`${entry.os} validada por ${user.name}`));
+  });
+  item.history.push(historyLine(`${selected.length} OS validadas por ${user.name}`));
+  updateGrdAfterEntries(item);
+  saveData();
+  showToast(`${selected.length} OS validada(s) e devolvida(s) para Michele.`);
+  render();
+}
+
+function pendSelectedGrdOs(id, person, user) {
+  const item = findGrd(id);
+  if (!item) return;
+  ensureGrdItem(item);
+  const isMarllon = person === "marllon" && user.role === "marllon";
+  const isJeferson = person === "jeferson" && user.role === "jeferson";
+  if (!isMarllon && !isJeferson) {
+    showToast("Somente o aprovador correto pode apontar pendencia.");
+    return;
+  }
+  const reason = prompt("Motivo da pendencia:");
+  if (!reason) {
+    showToast("Informe o motivo da pendencia.");
+    return;
+  }
+  const fromStatus = person === "jeferson" ? "with_jeferson" : "with_marllon";
+  const toStatus = person === "jeferson" ? "pending_jeferson" : "pending_marllon";
+  const now = new Date().toISOString();
+  const selected = selectedOrAllEntries(item, [fromStatus]);
+  if (!selected.length) {
+    showToast("Selecione OS que estejam com voce para apontar pendencia.");
+    return;
+  }
+  selected.forEach((entry) => {
+    entry.status = toStatus;
+    entry.currentHolder = "Michele";
+    entry.locationNote = "Devolvido com pendencia";
+    entry.pendingReason = reason;
+    if (person === "jeferson") entry.jefersonReturnedAt = now;
+    else entry.marllonReturnedAt = now;
+    entry.history = entry.history || [];
+    entry.history.push(historyLine(`${entry.os} com pendencia por ${user.name}: ${reason}`));
+  });
+  item.pendingReason = reason;
+  item.pendingBy = user.name;
+  item.pendingAt = now;
+  item.history.push(historyLine(`${selected.length} OS com pendencia por ${user.name}. Motivo: ${reason}`));
+  updateGrdAfterEntries(item);
+  saveData();
+  showToast(`${selected.length} pendencia(s) registrada(s) para Michele verificar.`);
+  render();
+}
+
+function scanSelectedGrdOs(id) {
+  if (currentUser().role !== "admin") {
+    showToast("Somente Michele pode marcar digitalizacao.");
+    return;
+  }
+  const item = findGrd(id);
+  if (!item) return;
+  ensureGrdItem(item);
+  const now = new Date().toISOString();
+  const selected = selectedOrAllEntries(item, ["validated_jeferson"]);
+  if (!selected.length) {
+    showToast("Selecione OS validadas por Jeferson para digitalizar.");
+    return;
+  }
+  selected.forEach((entry) => {
+    entry.status = "scanned";
+    entry.currentHolder = "Arquivo";
+    entry.scannedAt = now;
+    entry.history = entry.history || [];
+    entry.history.push(historyLine(`${entry.os} digitalizada/escaneada`));
+  });
+  item.scanned = item.entries.every((entry) => ["scanned", "done"].includes(entry.status));
+  item.scannedAt = now;
+  item.history.push(historyLine(`${selected.length} OS digitalizadas`));
+  updateGrdAfterEntries(item);
+  saveData();
+  showToast(`${selected.length} OS digitalizada(s).`);
+  render();
+}
+
+function archiveSelectedGrdOs(id) {
+  if (currentUser().role !== "admin") {
+    showToast("Somente Michele pode concluir OS.");
+    return;
+  }
+  const item = findGrd(id);
+  if (!item) return;
+  ensureGrdItem(item);
+  const selected = selectedOrAllEntries(item, ["scanned"]);
+  if (!selected.length) {
+    showToast("Selecione OS digitalizadas para arquivar/concluir.");
+    return;
+  }
+  const tracked = confirm("As OS selecionadas foram rastreadas?");
+  const checked = confirm("Voce fez a conferencia antes de concluir?");
+  const now = new Date().toISOString();
+  selected.forEach((entry) => {
+    entry.status = "done";
+    entry.currentHolder = "Arquivo";
+    entry.archivedAt = now;
+    entry.tracked = tracked;
+    entry.checked = checked;
+    entry.history = entry.history || [];
+    entry.history.push(historyLine(`${entry.os} arquivada e concluida. Rastreada: ${tracked ? "sim" : "nao"}. Conferencia: ${checked ? "sim" : "nao"}`));
+  });
+  item.archived = item.entries.every((entry) => entry.status === "done");
+  item.archivedAt = now;
+  item.tracked = item.entries.every((entry) => entry.tracked === true);
+  item.checked = item.entries.every((entry) => entry.checked === true);
+  item.history.push(historyLine(`${selected.length} OS arquivadas/concluidas`));
+  updateGrdAfterEntries(item);
+  saveData();
+  showToast(`${selected.length} OS concluida(s).`);
   render();
 }
 
@@ -3092,6 +3746,13 @@ function formatDate(date) {
   if (!date) return "";
   const [year, month, day] = date.split("-");
   return `${day}/${month}/${year}`;
+}
+
+function formatDateTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return formatDate(String(value).slice(0, 10));
+  return date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
 }
 
 function esc(value) {
