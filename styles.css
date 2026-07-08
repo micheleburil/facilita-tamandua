@@ -771,7 +771,7 @@ th {
 
 .grd-os-input-row {
   display: grid;
-  grid-template-columns: minmax(96px, .8fr) minmax(150px, 1fr) minmax(140px, 1fr) minmax(180px, 1.2fr) auto;
+  grid-template-columns: minmax(96px, .7fr) minmax(135px, .9fr) minmax(150px, 1fr) minmax(135px, 1fr) minmax(180px, 1.2fr) auto;
   gap: 10px;
   align-items: end;
   padding: 12px;
@@ -839,13 +839,21 @@ th {
   font-size: 15px;
 }
 
-.grd-logo {
+.grd-logo,
+.grd-a4-logo {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
   padding: 4px;
   font-weight: 800;
   color: #003b73;
+}
+
+.grd-a4-logo img {
+  max-width: 52px;
+  max-height: 28px;
+  object-fit: contain;
 }
 
 .grd-logo::first-letter {
@@ -910,21 +918,26 @@ th {
 }
 
 .grd-a4-table td:first-child {
-  width: 18%;
+  width: 14%;
   text-align: center;
 }
 
 .grd-a4-table td:nth-child(2) {
-  width: 26%;
+  width: 16%;
   text-align: center;
 }
 
 .grd-a4-table td:nth-child(3) {
-  width: 26%;
+  width: 22%;
   text-align: center;
 }
 
 .grd-a4-table td:nth-child(4) {
+  width: 24%;
+  text-align: center;
+}
+
+.grd-a4-table td:nth-child(5) {
   text-align: right;
 }
 
