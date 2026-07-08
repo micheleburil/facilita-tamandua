@@ -1089,6 +1089,14 @@ function renderGrdForm() {
           ${input("receivedDate", "Data que chegou para Michele", today, "", "date")}
           ${input("sentDate", "Data enviada para assinatura", today, "", "date")}
           <div class="field">
+            <label>Lancamento retroativo?</label>
+            <select name="retroactiveGrd">
+              <option value="false">Nao, seguir fluxo normal</option>
+              <option value="true">Sim, ja validado/assinado</option>
+            </select>
+            <span class="field-help">Retroativo entra sem aprovacao e fica pronto para digitalizar.</span>
+          </div>
+          <div class="field">
             <label>Empresa</label>
             <select name="company">
               <option value="Salum">Salum</option>
@@ -1247,6 +1255,25 @@ function grdTestOptions() {
     "Proctor",
     "Outro"
   ];
+}
+
+function grdCourierNames() {
+  return [
+    "Michele Buril",
+    "Andre Lima da Silva",
+    "Cleiton Vieira de Resende",
+    "Gicele Ramos",
+    "Hudson de Souza Vilela",
+    "Iury Jesus Silva",
+    "Joao Vitor Santos Leite",
+    "Ulisses Eduardo Stanley Souza",
+    "Wanessa Cristina Dias",
+    "Willian Jorge Lopes Neri"
+  ];
+}
+
+function grdCourierOptions(selected = "Michele Buril") {
+  return grdCourierNames().map((name) => `<option value="${esc(name)}" ${selected === name ? "selected" : ""}>${esc(name)}</option>`).join("");
 }
 
 function parseGrdEntries(text, fallback) {
@@ -1508,10 +1535,24 @@ function renderGrdFlowPanel(item) {
       <div class="flow-steps">
         ${["Michele", "Marllon", "Jeferson", "Digitalizacao", "Arquivo"].map((label) => `<span>${label}</span>`).join("")}
       </div>
+      ${canAdmin ? `
+        <div class="form-grid compact grd-courier-panel" id="grdCourierPanel">
+          <div class="field">
+            <label>Quem levou para mesa/entrega</label>
+            <select name="grdDeliveredBy">${grdCourierOptions()}</select>
+          </div>
+          <div class="field">
+            <label>Quem buscou na mesa</label>
+            <select name="grdPickedUpBy">${grdCourierOptions()}</select>
+          </div>
+        </div>
+      ` : ""}
       <div class="btn-row">
         ${canAdmin && entries.some((entry) => ["with_michele", "pending_marllon"].includes(entry.status)) ? `<button class="btn primary" data-action="deliverGrd" data-id="${item.id}" data-person="marllon" data-mode="presencial">Entregar p/ Marllon</button><button class="btn" data-action="deliverGrd" data-id="${item.id}" data-person="marllon" data-mode="mesa">Deixei na mesa Marllon</button>` : ""}
         ${canMarllon && entries.some((entry) => entry.status === "awaiting_marllon_receipt") ? `<button class="btn success" data-action="confirmGrdReceipt" data-id="${item.id}" data-person="marllon">Confirmo recebimento de todas</button>` : ""}
         ${canAdmin && entries.some((entry) => entry.status === "validated_marllon") ? `<button class="btn primary" data-action="deliverGrd" data-id="${item.id}" data-person="jeferson" data-mode="presencial">Entregar p/ Jeferson</button><button class="btn" data-action="deliverGrd" data-id="${item.id}" data-person="jeferson" data-mode="mesa">Deixei na mesa Jeferson</button>` : ""}
+        ${canAdmin && entries.some((entry) => ["awaiting_marllon_receipt", "with_marllon"].includes(entry.status)) ? `<button class="btn" data-action="pickupGrdFromDesk" data-id="${item.id}" data-person="marllon">Busquei na mesa Marllon</button>` : ""}
+        ${canAdmin && entries.some((entry) => ["awaiting_jeferson_receipt", "with_jeferson"].includes(entry.status)) ? `<button class="btn" data-action="pickupGrdFromDesk" data-id="${item.id}" data-person="jeferson">Busquei na mesa Jeferson</button>` : ""}
         ${canJeferson && entries.some((entry) => entry.status === "awaiting_jeferson_receipt") ? `<button class="btn success" data-action="confirmGrdReceipt" data-id="${item.id}" data-person="jeferson">Confirmo recebimento de todas</button>` : ""}
       </div>
       <div class="timeline compact-timeline">
@@ -1568,6 +1609,7 @@ function renderGrdEntryDates(entry) {
     ["Jeferson envio", entry.jefersonDeliveredAt],
     ["Jeferson recebeu", entry.jefersonReceiptAt],
     ["Jeferson devolveu", entry.jefersonReturnedAt],
+    [entry.pickedUpBy ? `Buscado por ${entry.pickedUpBy}` : "Buscado", entry.pickedUpAt],
     ["Digitalizado", entry.scannedAt],
     ["Arquivado", entry.archivedAt]
   ].filter(([, value]) => value);
@@ -2568,6 +2610,7 @@ function handleAction(event, action, dataset, user) {
   if (action === "applyGrdFilters") applyGrdFilters();
   if (action === "resetGrdFilters") resetGrdFilters();
   if (action === "deliverGrd") deliverGrd(dataset.id, dataset.person, dataset.mode);
+  if (action === "pickupGrdFromDesk") pickupGrdFromDesk(dataset.id, dataset.person);
   if (action === "confirmGrdReceipt") confirmGrdReceipt(dataset.id, dataset.person, user);
   if (action === "validateSelectedGrdOs") validateSelectedGrdOs(dataset.id, dataset.person, user);
   if (action === "pendSelectedGrdOs") pendSelectedGrdOs(dataset.id, dataset.person, user);
@@ -2657,13 +2700,20 @@ function saveGrd(fd) {
   }
   const firstEntry = entries[0];
   const createdAt = new Date().toISOString();
+  const isRetroactive = fd.get("retroactiveGrd") === "true";
   const preparedEntries = entries.map((entry) => ({
     ...entry,
-    status: "with_michele",
+    status: isRetroactive ? "validated_jeferson" : "with_michele",
     currentHolder: "Michele",
-    locationNote: "",
+    locationNote: isRetroactive ? "Lancamento retroativo sem aprovacao" : "",
     pendingReason: "",
-    history: [historyLine("OS recebida por Michele")]
+    marllonDeliveredAt: isRetroactive ? createdAt : "",
+    marllonReceiptAt: isRetroactive ? createdAt : "",
+    marllonReturnedAt: isRetroactive ? createdAt : "",
+    jefersonDeliveredAt: isRetroactive ? createdAt : "",
+    jefersonReceiptAt: isRetroactive ? createdAt : "",
+    jefersonReturnedAt: isRetroactive ? createdAt : "",
+    history: [historyLine(isRetroactive ? "OS lancada retroativa ja validada/assinada" : "OS recebida por Michele")]
   }));
   data.grds.push({
     id: uid(),
@@ -2677,7 +2727,7 @@ function saveGrd(fd) {
     returnedDate: "",
     notes: fd.get("notes") || "",
     entries: preparedEntries,
-    status: "waiting_michele",
+    status: isRetroactive ? "signed" : "waiting_michele",
     scanned: false,
     archived: false,
     tracked: null,
@@ -2685,11 +2735,12 @@ function saveGrd(fd) {
     pendingReason: "",
     createdAt,
     createdBy: currentUser().name,
-    history: [historyLine("GRD enviado para assinatura de Michele")]
+    retroactive: isRetroactive,
+    history: [historyLine(isRetroactive ? "GRD retroativo lancado sem necessidade de aprovacao" : "GRD enviado para assinatura de Michele")]
   });
   saveData();
   currentView = "grdDashboard";
-  showToast("GRD lancado e enviado para Michele assinar.");
+  showToast(isRetroactive ? "GRD retroativo lancado. Pronto para digitalizar." : "GRD lancado e enviado para Michele assinar.");
   render();
 }
 
@@ -2876,26 +2927,70 @@ function deliverGrd(id, person, mode) {
   const toStatus = person === "jeferson" ? "awaiting_jeferson_receipt" : "awaiting_marllon_receipt";
   const allowed = person === "jeferson" ? ["validated_marllon"] : ["with_michele", "pending_marllon"];
   const now = new Date().toISOString();
+  const deliveredBy = document.querySelector('[name="grdDeliveredBy"]')?.value || currentUser().name;
   let count = 0;
   item.entries.forEach((entry) => {
     if (!allowed.includes(entry.status)) return;
     entry.status = toStatus;
     entry.currentHolder = target;
-    entry.locationNote = mode === "mesa" ? `Deixado na mesa de ${target}` : "Entrega presencial";
+    entry.locationNote = mode === "mesa" ? `Deixado na mesa de ${target} por ${deliveredBy}` : `Entrega presencial por ${deliveredBy}`;
+    entry.deliveredBy = deliveredBy;
+    entry.deliveredMode = mode;
     if (person === "jeferson") entry.jefersonDeliveredAt = now;
     else entry.marllonDeliveredAt = now;
     entry.history = entry.history || [];
-    entry.history.push(historyLine(`${entry.os} entregue para ${target}: ${entry.locationNote}`));
+    entry.history.push(historyLine(`${entry.os} entregue para ${target} por ${deliveredBy}: ${entry.locationNote}`));
     count += 1;
   });
   if (!count) {
     showToast(`Nao ha OS pronta para entregar para ${target}.`);
     return;
   }
-  item.history.push(historyLine(`${count} OS entregues para ${target} (${mode === "mesa" ? "mesa" : "presencial"})`));
+  item.history.push(historyLine(`${count} OS entregues para ${target} por ${deliveredBy} (${mode === "mesa" ? "mesa" : "presencial"})`));
   updateGrdAfterEntries(item);
   saveData();
   showToast(`${count} OS aguardando confirmacao de recebimento por ${target}.`);
+  render();
+}
+
+function pickupGrdFromDesk(id, person) {
+  if (currentUser().role !== "admin") {
+    showToast("Somente Michele pode registrar busca na mesa.");
+    return;
+  }
+  const item = findGrd(id);
+  if (!item) return;
+  ensureGrdItem(item);
+  const target = person === "jeferson" ? "Jeferson" : "Marllon";
+  const pickedUpBy = document.querySelector('[name="grdPickedUpBy"]')?.value || currentUser().name;
+  const statuses = person === "jeferson" ? ["awaiting_jeferson_receipt", "with_jeferson"] : ["awaiting_marllon_receipt", "with_marllon"];
+  const now = new Date().toISOString();
+  let count = 0;
+  item.entries.forEach((entry) => {
+    if (!statuses.includes(entry.status)) return;
+    entry.pickedUpBy = pickedUpBy;
+    entry.pickedUpAt = now;
+    entry.locationNote = `Buscado na mesa de ${target} por ${pickedUpBy}`;
+    entry.currentHolder = "Michele";
+    if (person === "jeferson" && entry.status === "with_jeferson") {
+      entry.status = "validated_jeferson";
+      entry.jefersonReturnedAt = now;
+    } else if (person === "marllon" && entry.status === "with_marllon") {
+      entry.status = "validated_marllon";
+      entry.marllonReturnedAt = now;
+    }
+    entry.history = entry.history || [];
+    entry.history.push(historyLine(`${entry.os} buscada na mesa de ${target} por ${pickedUpBy}`));
+    count += 1;
+  });
+  if (!count) {
+    showToast(`Nao ha OS na mesa/com ${target} para buscar.`);
+    return;
+  }
+  item.history.push(historyLine(`${count} OS buscadas na mesa de ${target} por ${pickedUpBy}`));
+  updateGrdAfterEntries(item);
+  saveData();
+  showToast(`${count} OS registradas como buscadas na mesa de ${target}.`);
   render();
 }
 
