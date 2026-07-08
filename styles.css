@@ -1500,6 +1500,8 @@ th {
   margin-bottom: 34px;
   color: var(--text);
   font-style: normal;
+  white-space: normal;
+  align-items: flex-start;
 }
 
 .brand-mark {
@@ -1510,6 +1512,17 @@ th {
   background: var(--primary);
   color: #fff;
   font-size: 16px;
+  flex: 0 0 auto;
+}
+
+.brand > span:last-child {
+  min-width: 0;
+}
+
+.brand strong {
+  display: block;
+  line-height: 1.05;
+  overflow-wrap: anywhere;
 }
 
 .brand small {
