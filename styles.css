@@ -711,6 +711,70 @@ th {
   align-items: center;
 }
 
+.grd-filters {
+  margin-bottom: 16px;
+}
+
+.form-grid.compact {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.grd-flow-panel,
+.grd-os-panel {
+  margin-bottom: 16px;
+}
+
+.flow-steps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(110px, 1fr));
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.flow-steps span {
+  border: 1px solid var(--line);
+  background: #f8fbff;
+  border-radius: 8px;
+  padding: 10px;
+  text-align: center;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.compact-timeline {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.compact-timeline div {
+  border-left: 3px solid var(--primary);
+  background: #f8fbff;
+  padding: 8px 10px;
+  border-radius: 0 8px 8px 0;
+  color: var(--muted);
+}
+
+.grd-os-table {
+  min-width: 980px;
+}
+
+.grd-os-table td:first-child {
+  width: 42px;
+}
+
+.grd-actions {
+  margin-top: 14px;
+}
+
+.date-chip {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 .grd-print-wrap {
   display: grid;
   justify-content: center;
@@ -1844,5 +1908,15 @@ th {
 
   .pending-list > div {
     grid-template-columns: 42px 1fr;
+  }
+
+  .flow-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .grd-filters .section-title,
+  .grd-flow-panel .section-title,
+  .grd-os-panel .section-title {
+    align-items: flex-start;
   }
 }
