@@ -440,7 +440,7 @@ function renderApp(user) {
       <aside class="app-sidebar">
         <div class="brand">
           <span class="brand-mark">${renderIcon(data.settings.brandIcon || "F")}</span>
-          <span><strong>Facilita</strong><small>Gestao inteligente<br>de controles</small></span>
+          <span><strong>${esc(data.settings.appName || "Facilita")}</strong><small>Gestao inteligente<br>de controles</small></span>
         </div>
         <nav class="nav">
           ${views.map(([key, label]) => `<button class="${currentView === key ? "active" : ""}" data-view="${key}"><span>${navIcon(key)}</span>${label}</button>`).join("")}
