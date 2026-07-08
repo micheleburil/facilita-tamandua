@@ -1,4 +1,4 @@
-const CACHE_NAME = "facilita-grd-retroativo-mesa-20260708";
+const CACHE_NAME = "facilita-grd-os-empresa-acessos-20260708";
 const ASSETS = [
   "./",
   "./index.html",
