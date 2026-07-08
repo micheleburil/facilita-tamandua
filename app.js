@@ -502,6 +502,10 @@ function renderView(user) {
   bindViewEvents(user);
 }
 
+function backButton(view = "dashboard", label = "Voltar") {
+  return `<button class="btn" type="button" data-action="openView" data-view="${view}">${label}</button>`;
+}
+
 function bindViewEvents(user) {
   document.querySelectorAll("[data-action]").forEach((el) => {
     el.addEventListener("click", (event) => handleAction(event, el.dataset.action, el.dataset, user));
@@ -1779,6 +1783,7 @@ function renderScheduleForm() {
   return `
     <div class="page-head">
       <div><h1>${isRetroMode ? "Lancar hora extra retroativa" : "Nova autorizacao"}</h1><p>Lance a programacao por dia e adicione os colaboradores.</p></div>
+      ${backButton("heDashboard", "Voltar para HE")}
     </div>
     <form class="grid" data-form="schedule">
       <section class="card">
@@ -1864,7 +1869,10 @@ function renderApprovals(user) {
   return `
     <div class="page-head">
       <div><h1>Aprovacoes</h1><p>Itens aguardando sua validacao.</p></div>
-      ${items.length ? `<div class="btn-row"><button class="btn success" data-action="approveAll">Aprovar todos</button><button class="btn danger" data-action="rejectAll">Reprovar todos</button></div>` : ""}
+      <div class="btn-row">
+        ${items.length ? `<button class="btn success" data-action="approveAll">Aprovar todos</button><button class="btn danger" data-action="rejectAll">Reprovar todos</button>` : ""}
+        ${backButton("heDashboard", "Voltar para HE")}
+      </div>
     </div>
     <section class="card">
       ${renderItemsTable(items, false, true)}
@@ -1877,6 +1885,7 @@ function renderRejected() {
   return `
     <div class="page-head">
       <div><h1>Reprovados</h1><p>Corrija os itens reprovados e envie novamente para Marllon.</p></div>
+      ${backButton("heDashboard", "Voltar para HE")}
     </div>
     <section class="card">${renderItemsTable(items, false, false, true)}</section>
   `;
@@ -1906,7 +1915,10 @@ function renderSchedules() {
   return `
     <div class="page-head">
       <div><h1>Programacoes</h1><p>Consulta geral de programacoes e status.</p></div>
-      ${currentUser().role === "admin" ? `<button class="btn" data-action="editLayout">Editar layout</button>` : ""}
+      <div class="btn-row">
+        ${currentUser().role === "admin" ? `<button class="btn" data-action="editLayout">Editar layout</button>` : ""}
+        ${backButton("heDashboard", "Voltar para HE")}
+      </div>
     </div>
     <section class="card chart-controls">
       <form id="scheduleMetricControls" class="form-grid">
@@ -1960,6 +1972,7 @@ function renderReports() {
   return `
     <div class="page-head">
       <div><h1>Relatorios</h1><p>Gere relatorios em PDF e Excel com logos cadastradas.</p></div>
+      ${backButton("heDashboard", "Voltar para HE")}
     </div>
     <section class="card">
       <form class="form-grid" data-form="report">
@@ -1981,7 +1994,7 @@ function renderReports() {
 function renderCatalog(key, title, label) {
   const isEmployeeCatalog = key === "employees";
   return `
-    <div class="page-head"><div><h1>${title}</h1><p>Cadastre, edite ou desative registros.</p></div></div>
+    <div class="page-head"><div><h1>${title}</h1><p>Cadastre, edite ou desative registros.</p></div>${backButton("settings", "Voltar para Configuracoes")}</div>
     <section class="card">
       <form class="${isEmployeeCatalog ? "form-grid" : "btn-row"}" data-form="catalog" data-key="${key}">
         <input name="name" placeholder="${label}" required style="max-width:360px">
@@ -2002,7 +2015,7 @@ function renderCatalog(key, title, label) {
 
 function renderUsers() {
   return `
-    <div class="page-head"><div><h1>Usuarios</h1><p>Controle acessos, perfis e status.</p></div></div>
+    <div class="page-head"><div><h1>Usuarios</h1><p>Controle acessos, perfis e status.</p></div>${backButton("settings", "Voltar para Configuracoes")}</div>
     <section class="card">
       <form class="form-grid" data-form="user">
         <div class="field"><label>Nome</label><input name="name" required></div>
@@ -2028,7 +2041,7 @@ function renderSettings() {
   const pageClass = (id, extra = "") => `card settings-card settings-page ${extra} ${activeSection === id ? "" : "hidden-field"}`;
   return `
     <div class="settings-shell">
-      <div class="page-head settings-head"><div><h1>Configurações</h1><p>Personalize as informações e aparência do app.</p></div></div>
+      <div class="page-head settings-head"><div><h1>Configurações</h1><p>Personalize as informações e aparência do app.</p></div>${backButton("dashboard", "Voltar")}</div>
       <form class="grid settings-windows" data-form="settings">
         <div class="settings-tabs">
           ${tab("cfg-aparencia", "Aparencia e textos")}
@@ -2634,7 +2647,7 @@ function dashboardColorOptions(selected) {
 
 function renderAbout() {
   return `
-    <div class="page-head"><div><h1>Sobre</h1><p>Informacoes gerais do sistema.</p></div></div>
+    <div class="page-head"><div><h1>Sobre</h1><p>Informacoes gerais do sistema.</p></div>${backButton("dashboard", "Voltar")}</div>
     <section class="card">
       <div class="report-header">
         ${logoSlot(data.settings.logoErg || "ERG")}
