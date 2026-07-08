@@ -756,6 +756,30 @@ th {
   background: #fbfdff;
 }
 
+.admin-shortcuts {
+  margin-bottom: 16px;
+}
+
+.admin-shortcuts .section-title {
+  align-items: center;
+}
+
+.grd-os-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.grd-os-input-row {
+  display: grid;
+  grid-template-columns: minmax(96px, .8fr) minmax(150px, 1fr) minmax(140px, 1fr) minmax(180px, 1.2fr) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
 .compact-timeline div {
   border-left: 3px solid var(--primary);
   background: #f8fbff;
@@ -886,16 +910,21 @@ th {
 }
 
 .grd-a4-table td:first-child {
-  width: 26%;
+  width: 18%;
   text-align: center;
 }
 
 .grd-a4-table td:nth-child(2) {
-  width: 34%;
+  width: 26%;
   text-align: center;
 }
 
 .grd-a4-table td:nth-child(3) {
+  width: 26%;
+  text-align: center;
+}
+
+.grd-a4-table td:nth-child(4) {
   text-align: right;
 }
 
@@ -1888,6 +1917,24 @@ th {
   color: var(--muted);
 }
 
+.role-access-wrap td:first-child {
+  min-width: 170px;
+}
+
+.check-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px 12px;
+}
+
+.check-grid label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-weight: 700;
+  color: var(--text);
+}
+
 @media (max-width: 980px) {
   .app-shell {
     display: block;
@@ -1919,6 +1966,10 @@ th {
   }
 
   .flow-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .grd-os-input-row {
     grid-template-columns: 1fr;
   }
 
