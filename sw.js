@@ -1,4 +1,4 @@
-const CACHE_NAME = "facilita-grd-dashboard-limpo-20260708";
+const CACHE_NAME = "facilita-nome-menu-lateral-20260708";
 const ASSETS = [
   "./",
   "./index.html",
