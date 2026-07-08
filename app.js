@@ -366,6 +366,11 @@ function setCssVars() {
   document.documentElement.style.setProperty("--secondary", data.settings.secondary || "#00a676");
   document.documentElement.style.setProperty("--bg", dark ? "#111827" : data.settings.bgColor || "#f5f7fb");
   document.documentElement.style.setProperty("--surface", dark ? "#1f2937" : data.settings.surfaceColor || "#ffffff");
+  document.documentElement.style.setProperty("--surface-soft", dark ? "#273449" : "#f8fbff");
+  document.documentElement.style.setProperty("--input-bg", dark ? "#0f172a" : "#ffffff");
+  document.documentElement.style.setProperty("--table-head", dark ? "#243044" : "#f9fbfe");
+  document.documentElement.style.setProperty("--nav-hover", dark ? "#2b3b55" : "#eaf2ff");
+  document.documentElement.style.setProperty("--track", dark ? "#334155" : "#edf1f5");
   document.documentElement.style.setProperty("--text", dark ? "#f8fafc" : data.settings.textColor || "#122033");
   document.documentElement.style.setProperty("--muted", dark ? "#cbd5e1" : data.settings.mutedColor || "#637083");
   document.documentElement.style.setProperty("--line", dark ? "#334155" : data.settings.lineColor || "#d9e1ec");
@@ -376,6 +381,7 @@ function setCssVars() {
 
 function render() {
   setCssVars();
+  document.title = data.settings.appName || "Facilita";
   const user = currentUser();
   if (!user) {
     renderLogin();
@@ -1320,8 +1326,8 @@ function grdDeadlineRows(items) {
 
 function renderGrdTableV2(rows) {
   return `
-    <div class="table-wrap">
-      <table class="grd-os-table">
+    <div class="table-wrap no-x-scroll">
+      <table class="grd-os-table grd-list-table">
         <thead><tr><th>GRD</th><th>OS</th><th>Data ensaio</th><th>Empresa</th><th>Protocolo / ensaio</th><th>Responsavel</th><th>Status</th><th>Gargalo</th><th>Acoes</th></tr></thead>
         <tbody>
           ${rows.map(({ grd, entry }) => `
@@ -1707,8 +1713,8 @@ function renderGrdOsWorkPanel(item) {
         <div><h3>OS do GRD</h3><span class="muted">Selecione todas ou apenas algumas para validar, apontar pendencia, digitalizar ou concluir.</span></div>
         <div class="btn-row"><button class="btn" data-action="selectAllGrdOs">Selecionar todas</button></div>
       </div>
-      <div class="table-wrap">
-        <table class="grd-os-table">
+      <div class="table-wrap no-x-scroll">
+        <table class="grd-os-table grd-work-table">
           <thead><tr><th></th><th>OS</th><th>Data ensaio</th><th>Empresa</th><th>Protocolo</th><th>Tipo</th><th>Responsavel</th><th>Status</th><th>Datas</th></tr></thead>
           <tbody>
             ${entries.map((entry) => `
@@ -3334,7 +3340,8 @@ function validateSelectedGrdOs(id, person, user) {
   item.history.push(historyLine(`${selected.length} OS validadas por ${user.name} e buscadas por ${pickedUpBy}`));
   updateGrdAfterEntries(item);
   saveData();
-  showToast(`${selected.length} OS validada(s) e devolvida(s) para Michele.`);
+  showToast(`${selected.length} OS validada(s), devolvida(s) para Michele e retirada(s) da sua fila.`);
+  if (user.role !== "admin") currentView = "approvals";
   render();
 }
 
@@ -3382,6 +3389,7 @@ function pendSelectedGrdOs(id, person, user) {
   updateGrdAfterEntries(item);
   saveData();
   showToast(`${selected.length} pendencia(s) registrada(s) para Michele verificar.`);
+  if (user.role !== "admin") currentView = "approvals";
   render();
 }
 
