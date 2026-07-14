@@ -78,6 +78,28 @@ const defaultData = {
       { id: "grdCount", label: "GRDs", type: "grdCount", color: "yellow", icon: "▤", visible: true, order: 3 },
       { id: "pendingCount", label: "Pendentes", type: "pendingCount", color: "purple", icon: "♙", visible: true, order: 4 }
     ],
+    grdFarolLabels: {
+      osFlow: "OS no fluxo",
+      filtered: "OS filtradas",
+      withMichele: "Com Michele",
+      withMarllon: "Com Marllon",
+      withJeferson: "Com Jeferson",
+      pending: "Pendentes",
+      waitingScan: "Aguard. digitalizacao",
+      done: "Concluidas",
+      tracked: "Rastreadas",
+      checked: "Conferidas",
+      inProgress: "Em andamento",
+      responsibleTitle: "Farol por responsavel",
+      deadlineTitle: "Prazos",
+      typeTitle: "Por tipo de ensaio",
+      responsibleMichele: "Michele",
+      responsibleMarllon: "Marllon",
+      responsibleJeferson: "Jeferson",
+      deadlineOk: "No prazo",
+      deadlineNear: "Atencao",
+      deadlineLate: "Vencidas"
+    },
     recentTitle: "Farol recente",
     recentVisible: true,
     recentPosition: "after",
@@ -189,6 +211,7 @@ function normalizeData(value) {
   value.settings.scheduleCards = mergeConfigRows(defaultData.settings.scheduleCards, value.settings.scheduleCards || []);
   value.settings.dashboardCards = mergeConfigRows(defaultData.settings.dashboardCards, value.settings.dashboardCards || []);
   value.settings.homeSummaryCards = mergeConfigRows(defaultData.settings.homeSummaryCards, value.settings.homeSummaryCards || []);
+  value.settings.grdFarolLabels = { ...defaultData.settings.grdFarolLabels, ...(value.settings.grdFarolLabels || {}) };
   value.settings.navItems = mergeNavItems(value.settings.navItems || []);
   value.settings.roleAccess = normalizeRoleAccess(value.settings.roleAccess || {});
   value.settings.themeMode = value.settings.themeMode || defaultData.settings.themeMode;
@@ -455,7 +478,7 @@ function renderApp(user) {
           <span><strong>${esc(data.settings.appName || "Facilita")}</strong><small>${esc(data.settings.brandSubtitle || "Gestao inteligente de controles")}</small></span>
         </div>
         <nav class="nav">
-          ${views.map(([key, label]) => `<button class="${currentView === key ? "active" : ""}" data-view="${key}"><span>${navIcon(key)}</span>${label}</button>`).join("")}
+          ${views.map(([key, label]) => `<button class="${currentView === key ? "active" : ""}" data-view="${key}">${esc(label)}</button>`).join("")}
         </nav>
         <div class="user-box">
           <span class="avatar">${initials(user.name)}</span>
@@ -1862,17 +1885,17 @@ function chunk(list, size) {
 function barChart(title, rows) {
   return `
     <article class="card chart-card">
-      <h3>${title}</h3>
+      <h3>${esc(grdFarolDisplayLabel(title))}</h3>
       ${rows.map(([label, value, color, max]) => {
         const width = Math.max(3, Math.min(100, (Number(value) / Math.max(Number(max), 1)) * 100));
-        return `<div class="bar-line"><span>${label}</span><div class="bar-track"><i class="bar-fill bar-${color}" style="width:${width}%"></i></div><strong>${value}</strong></div>`;
+        return `<div class="bar-line"><span>${esc(grdFarolDisplayLabel(label))}</span><div class="bar-track"><i class="bar-fill bar-${color}" style="width:${width}%"></i></div><strong>${value}</strong></div>`;
       }).join("")}
     </article>
   `;
 }
 
 function metric(label, value, color, icon = "") {
-  return `<article class="card metric metric-count metric-tone-${color}"><strong class="metric-value">${esc(value)}</strong><span class="metric-label">${esc(label)}</span></article>`;
+  return `<article class="card metric metric-count metric-tone-${color}"><strong class="metric-value">${esc(value)}</strong><span class="metric-label">${esc(grdFarolDisplayLabel(label))}</span></article>`;
 }
 
 function renderIcon(icon) {
@@ -2261,7 +2284,7 @@ function renderSettings() {
       </section>
       <section class="${pageClass("cfg-abas")}" id="cfg-abas">
         <div class="section-title">
-          <div><h3>Abas do app</h3><p class="muted">Altere nomes, simbolos e ordem de exibicao</p></div>
+          <div><h3>Abas do app</h3><p class="muted">Altere nomes, ordem e exibicao das abas.</p></div>
           <div class="btn-row">
             <button type="button" class="btn" data-action="openView" data-view="users">Usuarios</button>
             <button type="button" class="btn" data-action="openView" data-view="functions">Funcoes</button>
@@ -2270,7 +2293,7 @@ function renderSettings() {
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Ordem</th><th>Nome da aba</th><th>Simbolo/imagem</th><th>Tela</th><th>Mostrar</th></tr></thead>
+            <thead><tr><th>Ordem</th><th>Nome da aba</th><th>Tela</th><th>Mostrar</th></tr></thead>
             <tbody>
               ${renderNavItemRows()}
             </tbody>
@@ -2315,6 +2338,12 @@ function renderSettings() {
               ${renderHomeSummaryCardRows()}
             </tbody>
           </table>
+        </div>
+        <div class="section-title" style="margin-top:24px">
+          <div><h3>Farois do GRD</h3><p class="muted">Mude os nomes dos cards, graficos e linhas dos graficos do GRD.</p></div>
+        </div>
+        <div class="form-grid">
+          ${renderGrdFarolLabelFields(s)}
         </div>
         <div class="section-title" style="margin-top:24px">
           <div><h3>Farol de HE</h3><p class="muted">Configure os cards da pagina HE.</p></div>
@@ -2630,6 +2659,36 @@ function normalizeText(value) {
     .toLowerCase();
 }
 
+function grdFarolLabel(key) {
+  return data.settings.grdFarolLabels?.[key] || defaultData.settings.grdFarolLabels[key] || key;
+}
+
+function grdFarolDisplayLabel(label) {
+  const map = {
+    "OS no fluxo": "osFlow",
+    "OS filtradas": "filtered",
+    "Com Michele": "withMichele",
+    "Com Marllon": "withMarllon",
+    "Com Jeferson": "withJeferson",
+    "Pendentes": "pending",
+    "Aguard. digitalizacao": "waitingScan",
+    "Concluidas": "done",
+    "Rastreadas": "tracked",
+    "Conferidas": "checked",
+    "Em andamento": "inProgress",
+    "Farol por responsavel": "responsibleTitle",
+    "Prazos": "deadlineTitle",
+    "Por tipo de ensaio": "typeTitle",
+    "Michele": "responsibleMichele",
+    "Marllon": "responsibleMarllon",
+    "Jeferson": "responsibleJeferson",
+    "No prazo": "deadlineOk",
+    "Atencao": "deadlineNear",
+    "Vencidas": "deadlineLate"
+  };
+  return map[label] ? grdFarolLabel(map[label]) : label;
+}
+
 function renderDashboardCardRows() {
   return (data.settings.dashboardCards || [])
     .slice()
@@ -2680,6 +2739,45 @@ function renderHomeSummaryCardRows() {
     `).join("");
 }
 
+function renderGrdFarolLabelFields(settings) {
+  const labels = { ...defaultData.settings.grdFarolLabels, ...(settings.grdFarolLabels || {}) };
+  const groups = [
+    ["Cards do GRD", [
+      ["osFlow", "Card: OS no fluxo"],
+      ["filtered", "Card: OS filtradas"],
+      ["withMichele", "Card: com Michele"],
+      ["withMarllon", "Card: com Marllon"],
+      ["withJeferson", "Card: com Jeferson"],
+      ["pending", "Card: pendentes"],
+      ["waitingScan", "Card: aguardando digitalizacao"],
+      ["done", "Card: concluidas"],
+      ["tracked", "Card: rastreadas"],
+      ["checked", "Card: conferidas"],
+      ["inProgress", "Card: em andamento"]
+    ]],
+    ["Graficos do GRD", [
+      ["responsibleTitle", "Titulo: responsavel"],
+      ["deadlineTitle", "Titulo: prazos"],
+      ["typeTitle", "Titulo: tipo de ensaio"],
+      ["responsibleMichele", "Linha: Michele"],
+      ["responsibleMarllon", "Linha: Marllon"],
+      ["responsibleJeferson", "Linha: Jeferson"],
+      ["deadlineOk", "Linha: no prazo"],
+      ["deadlineNear", "Linha: atencao"],
+      ["deadlineLate", "Linha: vencidas"]
+    ]]
+  ];
+  return groups.map(([title, fields]) => `
+    <div class="field full"><strong>${title}</strong></div>
+    ${fields.map(([key, label]) => `
+      <div class="field">
+        <label>${label}</label>
+        <input data-grd-farol-label name="grdFarol_${esc(key)}" data-key="${esc(key)}" value="${esc(labels[key] || "")}">
+      </div>
+    `).join("")}
+  `).join("");
+}
+
 function renderScheduleCardRows() {
   return (data.settings.scheduleCards || defaultData.settings.scheduleCards)
     .slice()
@@ -2722,7 +2820,6 @@ function renderNavItemRows() {
       <tr data-nav-item-row data-key="${esc(item.key)}">
         <td><input name="navOrder" type="number" min="1" value="${esc(item.order)}" style="width:82px"></td>
         <td><input name="navLabel" value="${esc(item.label)}"></td>
-        <td><input name="navIcon" value="${esc(item.icon || "")}" style="width:110px" placeholder="Texto/URL"><input type="file" accept="image/*" data-nav-icon-file></td>
         <td>${esc(navScreenLabel(item.key))}</td>
         <td><select name="navVisible"><option value="true" ${item.visible !== false ? "selected" : ""}>Sim</option><option value="false" ${item.visible === false ? "selected" : ""}>Nao</option></select></td>
       </tr>
@@ -3887,11 +3984,15 @@ function saveSettings(fd) {
     icon: row.querySelector('[name="scheduleCardIcon"]').value.trim(),
     visible: row.querySelector('[name="scheduleCardVisible"]').value === "true"
   }));
+  data.settings.grdFarolLabels = { ...defaultData.settings.grdFarolLabels };
+  document.querySelectorAll("[data-grd-farol-label]").forEach((input) => {
+    data.settings.grdFarolLabels[input.dataset.key] = input.value.trim() || defaultData.settings.grdFarolLabels[input.dataset.key] || "";
+  });
   data.settings.navItems = [...document.querySelectorAll("[data-nav-item-row]")].map((row, index) => ({
     key: row.dataset.key,
     order: Number(row.querySelector('[name="navOrder"]').value || index + 1),
     label: row.querySelector('[name="navLabel"]').value.trim() || navScreenLabel(row.dataset.key),
-    icon: row.querySelector('[name="navIcon"]').value.trim(),
+    icon: "",
     visible: row.querySelector('[name="navVisible"]').value === "true"
   }));
   data.settings.roleAccess = normalizeRoleAccess(Object.fromEntries([...document.querySelectorAll("[data-role-access-row]")].map((row) => [
