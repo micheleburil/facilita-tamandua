@@ -10,6 +10,7 @@ const defaultData = {
     homeTitle: "Bem-vinda ao Facilita",
     homeSubtitle: "Controle diario criado por Michele Buril",
     homeDescription: "Este app nasceu de uma ideia da Michele Buril para organizar, em um so lugar, os controles diarios de horas extras, GRD, compras de agua, relatorios, farois e acompanhamentos importantes da rotina.",
+    loginFooterText: "Controle interno ERG para rastrear GRDs, OS, responsaveis, assinaturas, digitalizacao, arquivo e gargalos do fluxo documental.",
     homeImage: "",
     showHomeImage: false,
     heActionPosition: "below",
@@ -464,7 +465,7 @@ function renderLogin() {
           <h1>${esc(data.settings.appName)}</h1>
           <p>${esc(data.settings.intro)}</p>
         </div>
-        <p>Usuarios de teste: michele@empresa.com, marllon@empresa.com, jeferson@empresa.com ou viewer@empresa.com. Senha: 123456.</p>
+        <p>${esc(data.settings.loginFooterText || defaultData.settings.loginFooterText)}</p>
       </section>
       <section class="login-panel">
         <h2>Entrar</h2>
@@ -472,11 +473,11 @@ function renderLogin() {
         <form id="loginForm" class="grid">
           <div class="field">
             <label for="email">E-mail</label>
-            <input id="email" type="email" required value="michele@empresa.com" />
+            <input id="email" type="email" required placeholder="seu-email@empresa.com" />
           </div>
           <div class="field">
             <label for="password">Senha</label>
-            <input id="password" type="password" required value="123456" />
+            <input id="password" type="password" required placeholder="Digite sua senha" />
           </div>
           <button class="btn primary" type="submit">Entrar</button>
         </form>
@@ -1935,7 +1936,7 @@ function renderGrdViewer() {
       </div>
     </div>
     ${renderGrdOsWorkPanel(item)}
-    <div class="grd-print-wrap no-screen-preview">
+    <div class="grd-print-wrap no-screen-preview" style="display:none">
       ${pages.map((pageEntries, pageIndex) => renderGrdA4Page(item, pageEntries, pageIndex + 1, pages.length)).join("")}
     </div>
   `;
@@ -2459,6 +2460,7 @@ function renderSettings() {
           ${input("appVersion", "Versao", s.appVersion)}
           ${input("appAdmin", "Administradora", s.appAdmin)}
           ${input("intro", "Texto inicial", s.intro, "full")}
+          ${input("loginFooterText", "Texto inferior da tela de entrada", s.loginFooterText, "full")}
           <div class="field full hidden-field">${input("homeDescription", "Descrição da tela inicial", s.homeDescription)}</div>
         </div>
         <div class="section-title" style="margin-top:24px">
@@ -4290,6 +4292,7 @@ function saveSettings(fd) {
     "brandSubtitle",
     "description",
     "intro",
+    "loginFooterText",
     "about",
     "homeTitle",
     "homeSubtitle",
