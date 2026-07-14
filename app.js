@@ -116,8 +116,8 @@ const defaultData = {
       locationTitle: "Onde esta cada ensaio",
       locationSubtitle: "Ultimas OS movimentadas, responsavel atual e etapa do fluxo.",
       locationButton: "Pesquisar OS",
-      recordsTitle: "Registros por OS",
-      recordsSubtitle: "Busca OS, protocolo, tipo de ensaio, responsavel e gargalo",
+      recordsTitle: "Registros por GRD",
+      recordsSubtitle: "Busca GRD, OS, protocolo, tipo de ensaio, responsavel e gargalo",
       filtersTitle: "Filtros e busca"
     },
     recentTitle: "Farol recente",
@@ -142,7 +142,10 @@ const defaultData = {
     ],
     micheleEmail: "michele@empresa.com",
     marllonEmail: "marllon@empresa.com",
-    jefersonEmail: "jeferson@empresa.com"
+    jefersonEmail: "jeferson@empresa.com",
+    grdEmailSubject: "GRD {grd} aguardando assinatura",
+    grdEmailBodyMarllon: "Ola Marllon,\n\nO GRD {grd} esta com {qtd} OS aguardando sua validacao/assinatura.\nData: {data}\nResponsavel atual: {responsavel}\n\nObrigada.",
+    grdEmailBodyJeferson: "Ola Jeferson,\n\nO GRD {grd} esta com {qtd} OS aguardando sua validacao/assinatura.\nData: {data}\nResponsavel atual: {responsavel}\n\nObrigada."
   },
   users: [
     { id: uid(), name: "Michele Buril", email: "michele@empresa.com", password: "123456", role: "admin", active: true },
@@ -233,6 +236,8 @@ function normalizeData(value) {
   value.settings.homeSummaryCards = mergeConfigRows(defaultData.settings.homeSummaryCards, value.settings.homeSummaryCards || []);
   value.settings.grdFarolLabels = { ...defaultData.settings.grdFarolLabels, ...(value.settings.grdFarolLabels || {}) };
   value.settings.pageTexts = { ...defaultData.settings.pageTexts, ...(value.settings.pageTexts || {}) };
+  if (value.settings.pageTexts.recordsTitle === "Registros por OS") value.settings.pageTexts.recordsTitle = defaultData.settings.pageTexts.recordsTitle;
+  if (value.settings.pageTexts.recordsSubtitle === "Busca OS, protocolo, tipo de ensaio, responsavel e gargalo") value.settings.pageTexts.recordsSubtitle = defaultData.settings.pageTexts.recordsSubtitle;
   value.settings.navItems = mergeNavItems(value.settings.navItems || []);
   value.settings.roleAccess = normalizeRoleAccess(value.settings.roleAccess || {});
   value.settings.themeMode = value.settings.themeMode || defaultData.settings.themeMode;
@@ -387,7 +392,7 @@ function roleLabel(role) {
     admin: "Administradora",
     marllon: "Aprovador Marllon",
     jeferson: "Aprovador Jeferson",
-    viewer: "Visualizador"
+    viewer: "Somente visualizacao"
   }[role] || role;
 }
 
@@ -1222,9 +1227,24 @@ function renderGrdManagerV2() {
         <div><h3>${esc(pageText("recordsTitle"))}</h3><span class="muted">${esc(pageText("recordsSubtitle"))}</span></div>
         ${currentUser().role === "admin" ? `<button class="btn primary" data-action="goNewGrd">Novo GRD</button>` : ""}
       </div>
-      ${renderGrdQuickSearch()}
-      ${renderGrdTableV2(rows)}
+      ${renderGrdQuickSearchV2()}
+      ${renderGrdRecords(rows)}
     </section>
+  `;
+}
+
+function renderGrdQuickSearchV2() {
+  const filters = currentGrdFilters();
+  return `
+    <div class="quick-search">
+      <span>Buscar</span>
+      <select name="grdListMode" data-auto="grdFilters">
+        <option value="grd" ${filters.listMode === "grd" ? "selected" : ""}>Puxar por GRD</option>
+        <option value="os" ${filters.listMode === "os" ? "selected" : ""}>Puxar por OS</option>
+      </select>
+      <input name="grdFilterQuery" value="${esc(filters.query)}" placeholder="Pesquisar GRD, OS, protocolo, empresa ou tipo de ensaio" data-auto="grdFilters">
+      <button class="btn" data-action="applyGrdFilters">Buscar</button>
+    </div>
   `;
 }
 
@@ -1298,6 +1318,13 @@ function renderGrdFilters(total, filtered) {
           </select>
         </div>
         <div class="field"><label>Buscar OS, protocolo, GRD ou empresa</label><input name="grdFilterQuery" value="${esc(filters.query)}" data-auto="grdFilters"></div>
+        <div class="field">
+          <label>Visualizar registros</label>
+          <select name="grdListMode" data-auto="grdFilters">
+            <option value="grd" ${filters.listMode === "grd" ? "selected" : ""}>Por GRD</option>
+            <option value="os" ${filters.listMode === "os" ? "selected" : ""}>Por OS</option>
+          </select>
+        </div>
       </div>
     </section>
   `;
@@ -1459,6 +1486,57 @@ function renderGrdTableV2(rows) {
       </table>
     </div>
   `;
+}
+
+function renderGrdRecords(rows) {
+  return currentGrdFilters().listMode === "os" ? renderGrdTableV2(rows) : renderGrdTableGrouped(rows);
+}
+
+function renderGrdTableGrouped(rows) {
+  const groups = groupedGrdRows(rows);
+  return `
+    <div class="table-wrap no-x-scroll">
+      <table class="grd-os-table grd-list-table grd-group-table">
+        <thead><tr><th>GRD</th><th>Qtd OS</th><th>Empresas</th><th>Tipos de ensaio</th><th>Status atual</th><th>Gargalo</th><th>Acoes</th></tr></thead>
+        <tbody>
+          ${groups.map((group) => `
+            <tr>
+              <td>${formatDate(group.grd.receivedDate)}<br><span class="muted">${esc(group.grd.id.slice(-6).toUpperCase())}</span></td>
+              <td><strong>${group.entries.length}</strong></td>
+              <td>${esc(group.companies.join(", ") || "-")}</td>
+              <td>${esc(group.types.join(", ") || "-")}</td>
+              <td>${esc(group.statusSummary)}</td>
+              <td>${group.maxDelay} dia(s)<br><span class="muted">maior tempo parado</span></td>
+              <td class="table-actions">
+                <button class="btn" data-action="viewGrd" data-id="${group.grd.id}">Abrir</button>
+                ${currentUser().role === "admin" ? `<button class="btn danger" data-action="deleteGrd" data-id="${group.grd.id}">Apagar</button>` : ""}
+              </td>
+            </tr>
+          `).join("") || `<tr><td colspan="7">Nenhum GRD encontrado para os filtros.</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function groupedGrdRows(rows) {
+  const map = new Map();
+  rows.forEach(({ grd, entry }) => {
+    if (!map.has(grd.id)) map.set(grd.id, { grd, entries: [] });
+    map.get(grd.id).entries.push(entry);
+  });
+  return [...map.values()].map((group) => {
+    const companies = [...new Set(group.entries.map((entry) => entry.company || group.grd.company).filter(Boolean))];
+    const types = [...new Set(group.entries.map((entry) => entry.testType).filter(Boolean))];
+    const holders = {};
+    group.entries.forEach((entry) => {
+      const key = entry.currentHolder || "Sem responsavel";
+      holders[key] = (holders[key] || 0) + 1;
+    });
+    const statusSummary = Object.entries(holders).map(([label, value]) => `${value} com ${label}`).join(", ");
+    const maxDelay = Math.max(0, ...group.entries.map((entry) => daysInCurrentStep(entry, group.grd)));
+    return { ...group, companies, types, statusSummary, maxDelay };
+  }).sort((a, b) => String(b.grd.receivedDate || "").localeCompare(String(a.grd.receivedDate || "")));
 }
 
 function grdDeadlineRowsV2(rows) {
@@ -1763,6 +1841,7 @@ function currentGrdFilters() {
     holder: data.settings.grdFilterHolder || "all",
     status: data.settings.grdFilterStatus || "all",
     testType: data.settings.grdFilterTestType || "all",
+    listMode: data.settings.grdListMode || "grd",
     query: data.settings.grdFilterQuery || ""
   };
 }
@@ -1824,7 +1903,7 @@ function renderGrdOsWorkPanel(item) {
       </div>
       <div class="table-wrap no-x-scroll">
         <table class="grd-os-table grd-work-table">
-          <thead><tr><th></th><th>OS</th><th>Data ensaio</th><th>Empresa</th><th>Protocolo</th><th>Tipo</th><th>Responsavel</th><th>Status</th><th>Datas</th></tr></thead>
+          <thead><tr><th><input type="checkbox" data-action="toggleAllGrdOs" title="Selecionar todas"></th><th>OS</th><th>Data ensaio</th><th>Empresa</th><th>Protocolo</th><th>Tipo</th><th>Responsavel</th><th>Status atual</th></tr></thead>
           <tbody>
             ${entries.map((entry) => `
               <tr>
@@ -1836,7 +1915,6 @@ function renderGrdOsWorkPanel(item) {
                 <td>${esc(entry.testType || "-")}</td>
                 <td>${esc(entry.currentHolder || "-")}${entry.locationNote ? `<br><span class="muted">${esc(entry.locationNote)}</span>` : ""}</td>
                 <td>${grdEntryBadge(entry.status)}${entry.pendingReason ? `<br><span class="muted">${esc(entry.pendingReason)}</span>` : ""}</td>
-                <td>${renderGrdEntryDates(entry)}</td>
               </tr>
             `).join("")}
           </tbody>
@@ -1844,13 +1922,19 @@ function renderGrdOsWorkPanel(item) {
       </div>
       <div class="btn-row grd-actions">
         ${canAdmin && entries.some((entry) => ["with_michele", "pending_marllon"].includes(entry.status)) ? `<button class="btn primary" data-action="deliverGrd" data-id="${item.id}" data-person="marllon" data-mode="presencial">Entregar p/ Marllon</button><button class="btn" data-action="deliverGrd" data-id="${item.id}" data-person="marllon" data-mode="mesa">Deixei na mesa Marllon</button>` : ""}
+        ${canAdmin && entries.some((entry) => ["with_michele", "pending_marllon"].includes(entry.status)) ? `<button class="btn" data-action="sendGrdEmail" data-id="${item.id}" data-person="marllon">Disparar e-mail Marllon</button>` : ""}
         ${canAdmin && entries.some((entry) => entry.status === "validated_marllon") ? `<button class="btn primary" data-action="deliverGrd" data-id="${item.id}" data-person="jeferson" data-mode="presencial">Entregar p/ Jeferson</button><button class="btn" data-action="deliverGrd" data-id="${item.id}" data-person="jeferson" data-mode="mesa">Deixei na mesa Jeferson</button>` : ""}
+        ${canAdmin && entries.some((entry) => entry.status === "validated_marllon") ? `<button class="btn" data-action="sendGrdEmail" data-id="${item.id}" data-person="jeferson">Disparar e-mail Jeferson</button>` : ""}
         ${canMarllon && entries.some((entry) => entry.status === "awaiting_marllon_receipt") ? `<button class="btn success" data-action="confirmGrdReceipt" data-id="${item.id}" data-person="marllon">Confirmo recebimento de todas</button>` : ""}
         ${canJeferson && entries.some((entry) => entry.status === "awaiting_jeferson_receipt") ? `<button class="btn success" data-action="confirmGrdReceipt" data-id="${item.id}" data-person="jeferson">Confirmo recebimento de todas</button>` : ""}
         ${role === "marllon" ? `<button class="btn success" data-action="validateSelectedGrdOs" data-id="${item.id}" data-person="marllon">Validar selecionadas</button><button class="btn danger" data-action="pendSelectedGrdOs" data-id="${item.id}" data-person="marllon">Pendencia selecionadas</button>` : ""}
         ${role === "jeferson" ? `<button class="btn success" data-action="validateSelectedGrdOs" data-id="${item.id}" data-person="jeferson">Validar selecionadas</button><button class="btn danger" data-action="pendSelectedGrdOs" data-id="${item.id}" data-person="jeferson">Pendencia selecionadas</button>` : ""}
         ${role === "admin" && hasToScan ? `<button class="btn" data-action="scanSelectedGrdOs" data-id="${item.id}">Marcar digitalizadas</button>` : ""}
         ${role === "admin" && hasToArchive ? `<button class="btn success" data-action="archiveSelectedGrdOs" data-id="${item.id}">Arquivar/concluir selecionadas</button>` : ""}
+      </div>
+      <div class="grd-history-panel">
+        <h3>Historico do GRD</h3>
+        ${renderGrdHistory(item)}
       </div>
     </section>
   `;
@@ -1869,6 +1953,19 @@ function renderGrdEntryDates(entry) {
     ["Arquivado", entry.archivedAt]
   ].filter(([, value]) => value);
   return rows.length ? rows.map(([label, value]) => `<span class="date-chip">${label}: ${formatDateTime(value)}</span>`).join("") : `<span class="muted">Sem datas</span>`;
+}
+
+function renderGrdHistory(item) {
+  ensureGrdItem(item);
+  const rows = [];
+  (item.history || []).forEach((text) => rows.push(text));
+  normalizeGrdEntries(item).forEach((entry) => {
+    (entry.history || []).forEach((text) => rows.push(`${entry.os}: ${text}`));
+  });
+  const unique = [...new Set(rows)].slice(-24).reverse();
+  return unique.length
+    ? `<div class="compact-timeline">${unique.map((text) => `<div>${esc(text)}</div>`).join("")}</div>`
+    : `<p class="muted">Nenhum historico registrado ainda.</p>`;
 }
 
 function renderGrdA4Page(item, entries, pageNumber, totalPages) {
@@ -2185,8 +2282,9 @@ function renderReports() {
       ${metric("Concluidas", done, "green", "✓")}
     </section>
     <section class="card">
-      <div class="section-title"><div><h3>Listagem GRD</h3><span class="muted">OS, empresa, protocolo, tipo, responsavel e status.</span></div></div>
-      ${renderGrdTableV2(rows)}
+      <div class="section-title"><div><h3>${esc(pageText("recordsTitle"))}</h3><span class="muted">${esc(pageText("recordsSubtitle"))}</span></div></div>
+      ${renderGrdQuickSearchV2()}
+      ${renderGrdRecords(rows)}
     </section>
   `;
 }
@@ -2221,7 +2319,7 @@ function renderUsers() {
         <div class="field"><label>Nome</label><input name="name" required></div>
         <div class="field"><label>E-mail</label><input name="email" type="email" required></div>
         <div class="field"><label>Senha</label><input name="password" value="123456" required></div>
-        <div class="field"><label>Perfil</label><select name="role"><option value="viewer">Visualizador</option><option value="admin">Administradora</option><option value="marllon">Aprovador Marllon</option><option value="jeferson">Aprovador Jeferson</option></select></div>
+        <div class="field"><label>Perfil</label><select name="role"><option value="viewer">Somente visualizar</option><option value="admin">Administradora</option><option value="marllon">Aprovador Marllon</option><option value="jeferson">Aprovador Jeferson</option></select></div>
         <div class="field"><label>Funcao</label><input name="functionName" placeholder="Funcao do usuario"></div>
         <div class="field"><label>Empresa</label><input name="company" value="${esc(data.settings.contractor || "")}"></div>
         <div class="field full"><button class="btn primary" type="submit">Cadastrar usuario</button></div>
@@ -2486,6 +2584,9 @@ function renderSettings() {
           ${input("micheleEmail", "E-mail Michele", s.micheleEmail, "", "email")}
           ${input("marllonEmail", "E-mail Marllon", s.marllonEmail, "", "email")}
           ${input("jefersonEmail", "E-mail Jeferson", s.jefersonEmail, "", "email")}
+          ${input("grdEmailSubject", "Assunto do e-mail GRD", s.grdEmailSubject, "", "text")}
+          ${input("grdEmailBodyMarllon", "Corpo do e-mail para Marllon", s.grdEmailBodyMarllon, "", "textarea")}
+          ${input("grdEmailBodyJeferson", "Corpo do e-mail para Jeferson", s.grdEmailBodyJeferson, "", "textarea")}
         </div>
       </section>
       <div class="settings-save"><button class="btn primary" type="submit">Salvar alteracoes</button></div>
@@ -3130,6 +3231,8 @@ function handleAction(event, action, dataset, user) {
   if (action === "scanSelectedGrdOs") scanSelectedGrdOs(dataset.id);
   if (action === "archiveSelectedGrdOs") archiveSelectedGrdOs(dataset.id);
   if (action === "selectAllGrdOs") selectAllGrdOs();
+  if (action === "toggleAllGrdOs") toggleAllGrdOs(event.target.checked);
+  if (action === "sendGrdEmail") sendGrdEmail(dataset.id, dataset.person);
   if (action === "viewGrd") {
     currentGrdViewId = dataset.id;
     currentView = "grdView";
@@ -3425,7 +3528,7 @@ function applyGrdFilters() {
   const fd = new FormData();
   if (wrap) wrap.querySelectorAll("input, select").forEach((el) => fd.set(el.name, el.value));
   document.querySelectorAll(".quick-search input, .quick-search select").forEach((el) => fd.set(el.name, el.value));
-  ["grdFilterPeriod", "grdFilterDate", "grdFilterMonth", "grdFilterStart", "grdFilterEnd", "grdFilterHolder", "grdFilterStatus", "grdFilterTestType", "grdFilterQuery"].forEach((key) => {
+  ["grdFilterPeriod", "grdFilterDate", "grdFilterMonth", "grdFilterStart", "grdFilterEnd", "grdFilterHolder", "grdFilterStatus", "grdFilterTestType", "grdFilterQuery", "grdListMode"].forEach((key) => {
     data.settings[key] = fd.get(key) || "";
   });
   saveData();
@@ -3433,7 +3536,7 @@ function applyGrdFilters() {
 }
 
 function resetGrdFilters() {
-  ["grdFilterPeriod", "grdFilterDate", "grdFilterMonth", "grdFilterStart", "grdFilterEnd", "grdFilterHolder", "grdFilterStatus", "grdFilterTestType", "grdFilterQuery"].forEach((key) => delete data.settings[key]);
+  ["grdFilterPeriod", "grdFilterDate", "grdFilterMonth", "grdFilterStart", "grdFilterEnd", "grdFilterHolder", "grdFilterStatus", "grdFilterTestType", "grdFilterQuery", "grdListMode"].forEach((key) => delete data.settings[key]);
   saveData();
   render();
 }
@@ -3445,6 +3548,12 @@ function selectedGrdEntryIds() {
 function selectAllGrdOs() {
   document.querySelectorAll("[data-grd-os-select]").forEach((input) => {
     input.checked = true;
+  });
+}
+
+function toggleAllGrdOs(checked) {
+  document.querySelectorAll("[data-grd-os-select]").forEach((input) => {
+    input.checked = checked;
   });
 }
 
@@ -3502,6 +3611,45 @@ function deliverGrd(id, person, mode) {
   saveData();
   showToast(`${count} OS aguardando confirmacao de recebimento por ${target}.`);
   render();
+}
+
+function sendGrdEmail(id, person) {
+  if (currentUser().role !== "admin") {
+    showToast("Somente Michele pode disparar e-mail do GRD.");
+    return;
+  }
+  const item = findGrd(id);
+  if (!item) return;
+  ensureGrdItem(item);
+  const target = person === "jeferson" ? "Jeferson" : "Marllon";
+  const to = person === "jeferson" ? data.settings.jefersonEmail : data.settings.marllonEmail;
+  if (!to) {
+    showToast(`Cadastre o e-mail de ${target} nas configuracoes.`);
+    return;
+  }
+  const subject = fillGrdEmailTemplate(data.settings.grdEmailSubject || defaultData.settings.grdEmailSubject, item, target);
+  const bodyTemplate = person === "jeferson"
+    ? (data.settings.grdEmailBodyJeferson || defaultData.settings.grdEmailBodyJeferson)
+    : (data.settings.grdEmailBodyMarllon || defaultData.settings.grdEmailBodyMarllon);
+  const body = fillGrdEmailTemplate(bodyTemplate, item, target);
+  item.history = item.history || [];
+  item.history.push(historyLine(`E-mail preparado para ${target}: ${to}`));
+  saveData();
+  window.location.href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  showToast(`E-mail para ${target} aberto para envio.`);
+}
+
+function fillGrdEmailTemplate(template, item, target) {
+  const entries = normalizeGrdEntries(item);
+  const values = {
+    grd: item.id.slice(-6).toUpperCase(),
+    qtd: entries.length,
+    data: formatDate(item.sentDate || item.receivedDate || new Date().toISOString().slice(0, 10)),
+    responsavel: target,
+    empresas: [...new Set(entries.map((entry) => entry.company || item.company).filter(Boolean))].join(", "),
+    os: entries.map((entry) => entry.os).filter(Boolean).join(", ")
+  };
+  return String(template || "").replace(/\{(grd|qtd|data|responsavel|empresas|os)\}/g, (_, key) => values[key] ?? "");
 }
 
 function pickupGrdFromDesk(id, person) {
@@ -3732,7 +3880,13 @@ function archiveSelectedGrdOs(id) {
   item.history.push(historyLine(`${selected.length} OS arquivadas/concluidas`));
   updateGrdAfterEntries(item);
   saveData();
-  showToast(`${selected.length} OS concluida(s).`);
+  if (item.archived) {
+    currentView = "grdDashboard";
+    currentGrdViewId = "";
+    showToast("GRD finalizado.");
+  } else {
+    showToast(`${selected.length} OS concluida(s).`);
+  }
   render();
 }
 
@@ -4077,6 +4231,9 @@ function saveSettings(fd) {
     "micheleEmail",
     "marllonEmail",
     "jefersonEmail",
+    "grdEmailSubject",
+    "grdEmailBodyMarllon",
+    "grdEmailBodyJeferson",
     "homeSummaryTitle",
     "homeSummaryMode",
     "recentTitle",
