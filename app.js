@@ -75,6 +75,9 @@ const defaultData = {
     lunchMinutes: 60,
     lunchTolerance: 5,
     minDate: "2026-04-01",
+    grdPrefix: "GRD",
+    grdNextNumber: 1,
+    grdDigits: 3,
     logoErg: "",
     logoVale: "",
     appSlug: "facilita-tamandua",
@@ -274,6 +277,9 @@ function normalizeData(value) {
   value.settings.showA4Logos = value.settings.showA4Logos !== false;
   value.settings.homeSummaryMode = value.settings.homeSummaryMode || defaultData.settings.homeSummaryMode;
   value.settings.homeSummaryTitle = value.settings.homeSummaryTitle || defaultData.settings.homeSummaryTitle;
+  value.settings.grdPrefix = value.settings.grdPrefix || defaultData.settings.grdPrefix;
+  value.settings.grdNextNumber = Math.max(1, Number(value.settings.grdNextNumber || defaultData.settings.grdNextNumber));
+  value.settings.grdDigits = Math.max(1, Number(value.settings.grdDigits || defaultData.settings.grdDigits));
   const defaultFunctionByName = Object.fromEntries(employeeDefaults().map((item) => [normalizeText(item.name), item.defaultFunction]));
   value.employees = (value.employees || []).map((employee) => {
     const current = typeof employee === "string" ? { id: uid(), name: employee, active: true } : employee;
@@ -1237,7 +1243,7 @@ function renderGrdLocationRadar(rows) {
           </button>
         `).join("") : grdGroups.map(({ grd, entries, companies, holders }) => `
           <button class="location-item location-item-grd" data-action="viewGrd" data-id="${grd.id}">
-            <strong>${esc(grd.grdCode || grd.id)}</strong>
+            <strong>${esc(displayGrdCode(grd))}</strong>
             <span>${entries.length} OS - ${esc(companies.join(" / ") || "-")}</span>
             <em>${esc(holders.join(" / ") || "-")}</em>
             <small>${esc(entries.map((entry) => entry.os || "-").join(", "))}</small>
@@ -1447,6 +1453,11 @@ function renderGrdForm() {
     <section class="card">
       <form class="grid" data-form="grd">
         <div class="form-grid">
+          <div class="field">
+            <label>Numero do GRD</label>
+            <input value="${esc(nextGrdCode())}" disabled>
+            <span class="field-help">Gerado automaticamente. Altere o padrao em Configuracoes > Regras.</span>
+          </div>
           ${input("receivedDate", "Data que chegou para Michele", today, "", "date")}
           ${input("sentDate", "Data enviada para assinatura", today, "", "date")}
           <div class="field">
@@ -1597,7 +1608,7 @@ function renderGrdTableV2(rows) {
         <tbody>
           ${rows.map(({ grd, entry }) => `
             <tr>
-              <td>${formatDate(grd.receivedDate)}<br><span class="muted">${esc(grd.id.slice(-6).toUpperCase())}</span></td>
+              <td>${formatDate(grd.receivedDate)}<br><span class="muted">${esc(displayGrdCode(grd))}</span></td>
               <td><strong>${esc(entry.os || "-")}</strong></td>
               <td>${formatDate(entry.testDate) || "-"}</td>
               <td>${esc(entry.company || grd.company || "-")}</td>
@@ -1631,7 +1642,7 @@ function renderGrdTableGrouped(rows) {
         <tbody>
           ${groups.map((group) => `
             <tr>
-              <td>${formatDate(group.grd.receivedDate)}<br><span class="muted">${esc(group.grd.id.slice(-6).toUpperCase())}</span></td>
+              <td>${formatDate(group.grd.receivedDate)}<br><span class="muted">${esc(displayGrdCode(group.grd))}</span></td>
               <td><strong>${group.entries.length}</strong></td>
               <td>${esc(group.companies.join(", ") || "-")}</td>
               <td>${esc(group.types.join(", ") || "-")}</td>
@@ -2038,7 +2049,7 @@ function filteredGrdEntries() {
     if (filters.status !== "all" && entry.status !== filters.status) return false;
     if (filters.testType !== "all" && entry.testType !== filters.testType) return false;
     if (query) {
-      const haystack = normalizeText([entry.os, entry.protocol, entry.testType, entry.company, grd.company, grd.id].join(" "));
+      const haystack = normalizeText([entry.os, entry.protocol, entry.testType, entry.company, grd.company, grd.grdCode, grd.id].join(" "));
       if (!haystack.includes(query)) return false;
     }
     return true;
@@ -2870,6 +2881,9 @@ function renderSettings() {
           ${input("lunchMinutes", "Almoco padrao em minutos", s.lunchMinutes, "", "number")}
           ${input("lunchTolerance", "Tolerancia almoco em minutos", s.lunchTolerance, "", "number")}
           ${input("minDate", "Data minima", s.minDate, "", "date")}
+          ${input("grdPrefix", "Prefixo do GRD", s.grdPrefix || "GRD")}
+          ${input("grdNextNumber", "Proximo numero do GRD", s.grdNextNumber || 1, "", "number")}
+          ${input("grdDigits", "Quantidade de digitos do GRD", s.grdDigits || 3, "", "number")}
         </div>
       </section>
       <section class="${pageClass("cfg-botoes-he")}" id="cfg-botoes-he">
@@ -3660,6 +3674,7 @@ function saveGrd(fd) {
   const createdAt = new Date().toISOString();
   const isRetroactive = fd.get("retroactiveGrd") === "true";
   const initialCourier = fd.get("grdInitialCourier") || currentUser().name;
+  const grdCode = consumeNextGrdCode();
   const preparedEntries = entries.map((entry) => ({
     ...entry,
     status: isRetroactive ? "validated_jeferson" : "with_michele",
@@ -3677,6 +3692,7 @@ function saveGrd(fd) {
   }));
   const createdGrd = {
     id: uid(),
+    grdCode,
     company: firstEntry.company,
     testType: firstEntry.testType,
     os: firstEntry.os,
@@ -3697,7 +3713,7 @@ function saveGrd(fd) {
     createdBy: currentUser().name,
     initialCourier,
     retroactive: isRetroactive,
-    history: [historyLine(isRetroactive ? `GRD retroativo lancado por ${initialCourier} sem necessidade de aprovacao` : `GRD lancado por ${initialCourier} e enviado para assinatura de Michele`)]
+    history: [historyLine(isRetroactive ? `${grdCode} retroativo lancado por ${initialCourier} sem necessidade de aprovacao` : `${grdCode} lancado por ${initialCourier} e enviado para assinatura de Michele`)]
   };
   data.grds.push(createdGrd);
   saveData();
@@ -3721,6 +3737,23 @@ function readGrdEntryRows() {
     })).filter((entry) => entry.os || entry.company || entry.protocol || entry.testType);
   }
   return parseGrdEntries("", {});
+}
+
+function nextGrdCode() {
+  const prefix = String(data.settings.grdPrefix || "GRD").trim() || "GRD";
+  const next = Math.max(1, Number(data.settings.grdNextNumber || 1));
+  const digits = Math.max(1, Number(data.settings.grdDigits || 3));
+  return `${prefix} ${String(next).padStart(digits, "0")}`;
+}
+
+function consumeNextGrdCode() {
+  const code = nextGrdCode();
+  data.settings.grdNextNumber = Math.max(1, Number(data.settings.grdNextNumber || 1)) + 1;
+  return code;
+}
+
+function displayGrdCode(grd) {
+  return grd?.grdCode || (grd?.id ? grd.id.slice(-6).toUpperCase() : "-");
 }
 
 function findGrd(id) {
@@ -3980,13 +4013,13 @@ function sendGrdEmail(id, person) {
 function fillGrdEmailTemplate(template, item, target) {
   const entries = normalizeGrdEntries(item);
   const values = {
-    grd: item.id.slice(-6).toUpperCase(),
+    grd: displayGrdCode(item),
     qtd: entries.length,
     data: formatDate(item.sentDate || item.receivedDate || new Date().toISOString().slice(0, 10)),
     responsavel: target,
     empresas: [...new Set(entries.map((entry) => entry.company || item.company).filter(Boolean))].join(", "),
     os: entries.map((entry) => entry.os).filter(Boolean).join(", "),
-    link: `${location.origin}${location.pathname}?v=grd-checkup-tempos-20260714`
+    link: `${location.origin}${location.pathname}?v=grd-numeracao-20260714`
   };
   return String(template || "").replace(/\{(grd|qtd|data|responsavel|empresas|os|link)\}/g, (_, key) => values[key] ?? "");
 }
@@ -4613,6 +4646,9 @@ function saveSettings(fd) {
     "lunchMinutes",
     "lunchTolerance",
     "minDate",
+    "grdPrefix",
+    "grdNextNumber",
+    "grdDigits",
     "micheleEmail",
     "marllonEmail",
     "jefersonEmail",
@@ -4628,6 +4664,9 @@ function saveSettings(fd) {
   simpleSettings.forEach((key) => {
     if (fd.has(key)) data.settings[key] = fd.get(key);
   });
+  data.settings.grdPrefix = String(data.settings.grdPrefix || "GRD").trim() || "GRD";
+  data.settings.grdNextNumber = Math.max(1, Number(data.settings.grdNextNumber || 1));
+  data.settings.grdDigits = Math.max(1, Number(data.settings.grdDigits || 3));
   data.settings.recentVisible = fd.get("recentVisible") === "true";
   data.settings.showHomeImage = fd.get("showHomeImage") === "true";
   data.settings.showSidebarLogo = fd.get("showSidebarLogo") !== "false";
