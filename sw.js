@@ -1,4 +1,4 @@
-const CACHE_NAME = "facilita-tema-layout-a4-fluxo-20260708";
+const CACHE_NAME = "facilita-login-a4-assinaturas-20260714";
 const ASSETS = [
   "./",
   "./index.html",
