@@ -1542,6 +1542,7 @@ function renderGrdTableV2(rows) {
               <td>${daysInCurrentStep(entry, grd)} dia(s)<br><span class="muted">desde ${formatDate(String(grdStatusDate(entry) || grd.receivedDate || "").slice(0, 10)) || "-"}</span></td>
               <td class="table-actions">
                 <button class="btn" data-action="viewGrd" data-id="${grd.id}">Abrir</button>
+                ${currentUser().role === "admin" ? `<button class="btn" data-action="editGrd" data-id="${grd.id}">Editar</button>` : ""}
                 ${currentUser().role === "admin" ? `<button class="btn danger" data-action="deleteGrd" data-id="${grd.id}">Apagar</button>` : ""}
               </td>
             </tr>
@@ -1573,6 +1574,7 @@ function renderGrdTableGrouped(rows) {
               <td>${group.maxDelay} dia(s)<br><span class="muted">maior tempo parado</span></td>
               <td class="table-actions">
                 <button class="btn" data-action="viewGrd" data-id="${group.grd.id}">Abrir</button>
+                ${currentUser().role === "admin" ? `<button class="btn" data-action="editGrd" data-id="${group.grd.id}">Editar</button>` : ""}
                 ${currentUser().role === "admin" ? `<button class="btn danger" data-action="deleteGrd" data-id="${group.grd.id}">Apagar</button>` : ""}
               </td>
             </tr>
@@ -1807,7 +1809,7 @@ function parseGrdEditEntries(text, fallback) {
       if (parts.length >= 5) {
         return {
           id: uid(),
-          os: parts[0] || fallback.os || `Item ${index + 1}`,
+          os: normalizeOsInput(parts[0] || fallback.os, index),
           testDate: parts[1] || "",
           protocol: parts[2] || "",
           testType: parts[3] || "",
@@ -1991,6 +1993,7 @@ function renderGrdViewer() {
       <div><h1>Guia GRD</h1><p>${entries.length} OS - ${companies.length > 1 ? "empresas variadas" : esc(companies[0] || item.company || "sem empresa")}</p></div>
       <div class="btn-row">
         <button class="btn" data-action="openView" data-view="grdDashboard">Voltar</button>
+        ${currentUser().role === "admin" ? `<button class="btn" data-action="editGrd" data-id="${item.id}">Editar GRD</button>` : ""}
         ${currentUser().role === "admin" ? `<button class="btn danger" data-action="deleteGrd" data-id="${item.id}">Apagar GRD</button>` : ""}
         <button class="btn primary" data-action="printGrd">Imprimir A4</button>
       </div>
@@ -2532,7 +2535,7 @@ function renderUsers() {
       <div class="table-wrap" style="margin-top:16px">
         <table>
           <thead><tr><th>Usuario</th><th>E-mail</th><th>Funcao</th><th>Empresa</th><th>Perfil</th><th>Status</th><th>Acoes</th></tr></thead>
-          <tbody>${data.users.map((u) => `<tr><td>${userAvatar(u)}<strong>${esc(u.name)}</strong></td><td>${esc(u.email)}</td><td>${esc(u.functionName || "-")}</td><td>${esc(u.company || "-")}</td><td>${roleLabel(u.role)}</td><td>${u.active ? "Ativo" : "Inativo"}</td><td><button class="btn" data-action="toggleUser" data-id="${u.id}">${u.active ? "Desativar" : "Ativar"}</button></td></tr>`).join("")}</tbody>
+          <tbody>${data.users.map((u) => `<tr><td>${userAvatar(u)}<strong>${esc(u.name)}</strong></td><td>${esc(u.email)}</td><td>${esc(u.functionName || "-")}</td><td>${esc(u.company || "-")}</td><td>${roleLabel(u.role)}</td><td>${u.active ? "Ativo" : "Inativo"}</td><td class="btn-row"><button class="btn" data-action="editUser" data-id="${u.id}">Editar</button><button class="btn" data-action="toggleUser" data-id="${u.id}">${u.active ? "Desativar" : "Ativar"}</button></td></tr>`).join("")}</tbody>
         </table>
       </div>
     </section>
@@ -2662,6 +2665,7 @@ function renderSettings() {
       <section class="${pageClass("cfg-acessos")}" id="cfg-acessos">
         <div class="section-title">
           <div><h3>Acessos por perfil</h3><p class="muted">GRD fica sempre disponivel. Michele controla quais outras areas cada perfil pode ver.</p></div>
+          <button type="button" class="btn primary" data-action="openView" data-view="users">Gerenciar usuarios</button>
         </div>
         <div class="table-wrap role-access-wrap">
           <table>
@@ -3416,6 +3420,7 @@ function handleAction(event, action, dataset, user) {
   if (action === "sendDraft") sendDraft(dataset.id);
   if (action === "toggleCatalog") toggleCatalog(dataset.key, dataset.id);
   if (action === "editCatalog") editCatalog(dataset.key, dataset.id);
+  if (action === "editUser") editUser(dataset.id);
   if (action === "toggleUser") toggleUser(dataset.id);
   if (action === "printSchedule") printSchedule(dataset.id);
   if (action === "exportSchedule") exportSchedule(dataset.id);
@@ -3692,8 +3697,8 @@ function editGrd(id) {
   const item = findGrd(id);
   if (!item) return;
   const oldEntries = normalizeGrdEntries(item);
-  const currentEntries = oldEntries.map((entry) => `${entry.os} | ${entry.testDate || ""} | ${entry.protocol || ""} | ${entry.testType || entry.description || ""} | ${entry.company || item.company || ""}`).join("\n");
-  const entriesText = prompt("Documentos da GRD (OS | Data do ensaio | Protocolo | Tipo de ensaio | Empresa):", currentEntries);
+  const currentEntries = oldEntries.map((entry) => `${stripOsPrefix(entry.os)} | ${entry.testDate || ""} | ${entry.protocol || ""} | ${entry.testType || entry.description || ""} | ${entry.company || item.company || ""}`).join("\n");
+  const entriesText = prompt("Documentos da GRD (Numero da OS | Data do ensaio | Protocolo | Tipo de ensaio | Empresa):", currentEntries);
   if (entriesText === null) return;
   const entries = parseGrdEditEntries(entriesText, item).filter((entry) => entry.os && entry.testType && entry.company);
   if (!entries.length) {
@@ -4398,6 +4403,49 @@ function toggleUser(id) {
   const user = data.users.find((u) => u.id === id);
   user.active = !user.active;
   saveData();
+  render();
+}
+
+function editUser(id) {
+  if (currentUser().role !== "admin") {
+    showToast("Somente Michele pode editar usuarios.");
+    return;
+  }
+  const user = data.users.find((u) => u.id === id);
+  if (!user) return;
+  const oldEmail = user.email;
+  const name = prompt("Nome do usuario:", user.name || "");
+  if (name === null) return;
+  const email = prompt("E-mail de acesso:", user.email || "");
+  if (email === null) return;
+  const cleanEmail = email.trim();
+  if (!cleanEmail) {
+    showToast("Informe um e-mail para o usuario.");
+    return;
+  }
+  const duplicated = data.users.some((entry) => entry.id !== id && normalizeText(entry.email) === normalizeText(cleanEmail));
+  if (duplicated) {
+    showToast("Este e-mail ja esta em uso por outro usuario.");
+    return;
+  }
+  const password = prompt("Senha:", user.password || "123456");
+  if (password === null) return;
+  const role = prompt("Perfil (admin, marllon, jeferson ou viewer):", user.role || "viewer");
+  if (role === null) return;
+  const cleanRole = ["admin", "marllon", "jeferson", "viewer"].includes(role.trim()) ? role.trim() : "viewer";
+  const functionName = prompt("Funcao:", user.functionName || roleLabel(cleanRole));
+  if (functionName === null) return;
+  const company = prompt("Empresa:", user.company || data.settings.contractor || "");
+  if (company === null) return;
+  user.name = name.trim() || user.name;
+  user.email = cleanEmail;
+  user.password = password.trim() || user.password || "123456";
+  user.role = cleanRole;
+  user.functionName = functionName.trim() || roleLabel(cleanRole);
+  user.company = company.trim();
+  if (data.sessionEmail === oldEmail) data.sessionEmail = user.email;
+  saveData();
+  showToast("Usuario atualizado.");
   render();
 }
 
