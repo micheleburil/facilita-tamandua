@@ -1,4 +1,4 @@
-const CACHE_NAME = "facilita-supabase-connected-20260714";
+const CACHE_NAME = "facilita-supabase-connected-fix-20260714";
 const ASSETS = [
   "./",
   "./index.html",
