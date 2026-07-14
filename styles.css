@@ -984,7 +984,7 @@ th {
 
 .quick-search {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(150px, 190px) minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   margin: 12px 0 14px;
@@ -995,11 +995,47 @@ th {
 }
 
 .quick-search span {
-  width: 32px;
+  min-width: 58px;
   height: 32px;
   display: grid;
   place-items: center;
   color: var(--primary);
+  font-weight: 800;
+}
+
+.grd-history-panel {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.grd-group-table th:nth-child(1),
+.grd-group-table td:nth-child(1) {
+  width: 14%;
+}
+
+.grd-group-table th:nth-child(2),
+.grd-group-table td:nth-child(2) {
+  width: 8%;
+}
+
+.grd-group-table th:nth-child(3),
+.grd-group-table td:nth-child(3),
+.grd-group-table th:nth-child(4),
+.grd-group-table td:nth-child(4) {
+  width: 19%;
+}
+
+.grd-group-table th:nth-child(5),
+.grd-group-table td:nth-child(5) {
+  width: 18%;
+}
+
+.grd-group-table th:nth-child(6),
+.grd-group-table td:nth-child(6),
+.grd-group-table th:nth-child(7),
+.grd-group-table td:nth-child(7) {
+  width: 11%;
 }
 
 .date-chip {
