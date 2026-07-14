@@ -137,6 +137,18 @@ button {
   border-left: 3px solid var(--warning);
 }
 
+.code-help {
+  margin: 8px 0 0;
+  padding: 12px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(15, 32, 55, 0.05);
+  color: var(--text);
+  font-size: 12px;
+  white-space: pre;
+}
+
 .app-shell {
   min-height: 100vh;
   display: block;
