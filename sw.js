@@ -1,4 +1,4 @@
-const CACHE_NAME = "facilita-print-isolado-a4-20260714";
+﻿const CACHE_NAME = "facilita-design-dashboard-ref-20260714";
 const ASSETS = [
   "./",
   "./index.html",
@@ -24,3 +24,4 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   event.respondWith(fetch(event.request).catch(() => caches.match(event.request).then((cached) => cached || caches.match("./index.html"))));
 });
+
