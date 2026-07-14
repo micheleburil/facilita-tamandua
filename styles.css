@@ -1691,17 +1691,15 @@ th {
     margin: 0;
   }
 
+  html,
   body {
     background: white;
+    width: 210mm;
+    margin: 0;
   }
 
-  .sidebar,
-  .app-header,
-  .topbar,
-  .page-head,
-  .btn-row,
-  .no-print {
-    display: none !important;
+  body * {
+    visibility: hidden !important;
   }
 
   .app-shell {
@@ -1720,6 +1718,18 @@ th {
 
   .grd-print-wrap {
     display: block !important;
+    visibility: visible !important;
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 210mm;
+    margin: 0;
+    padding: 0;
+  }
+
+  .grd-print-wrap *,
+  .grd-a4,
+  .grd-a4 * {
+    visibility: visible !important;
   }
 
   .no-screen-preview {
@@ -1732,6 +1742,7 @@ th {
     border: 2px solid #0037b8;
     box-shadow: none;
     page-break-after: always;
+    margin: 0;
   }
 }
 
