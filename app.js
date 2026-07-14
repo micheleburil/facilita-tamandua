@@ -2098,7 +2098,7 @@ function renderGrdA4Page(item, entries, pageNumber, totalPages) {
       <div class="grd-sign-title">ASSINATURA CONTRATADA:</div>
       <footer class="grd-signatures">
         <div>
-          ${signatures.marllon ? `<div class="electronic-signature"><strong>Assinado eletronicamente por Marllon</strong><small>${esc(signatures.marllon)}</small><small>Validacao registrada no Facilita</small></div>` : `<span></span>`}
+          ${signatures.courier ? `<div class="electronic-signature"><strong>Assinado eletronicamente por ${esc(signatures.courier.name)}</strong><small>${esc(signatures.courier.text)}</small><small>Responsavel pela entrega do GRD</small></div>` : `<span></span>`}
           <strong>ERG ENGENHARIA LTDA</strong>
         </div>
         <div>
@@ -2118,12 +2118,57 @@ function grdReturnDate(item) {
 
 function grdElectronicSignatures(item) {
   const entries = normalizeGrdEntries(item);
-  const marllonDates = entries.map((entry) => entry.marllonReturnedAt).filter(Boolean).sort();
+  const courierEvents = entries
+    .map((entry) => ({
+      name: entry.deliveredBy || item.initialCourier || item.createdBy || "Michele Buril",
+      date: entry.marllonDeliveredAt || item.sentDate || item.createdAt || ""
+    }))
+    .filter((event) => event.date)
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
   const jefersonDates = entries.map((entry) => entry.jefersonReturnedAt).filter(Boolean).sort();
+  const courier = courierEvents[courierEvents.length - 1];
   return {
-    marllon: marllonDates.length ? `Assinado em ${formatDateTime(marllonDates[marllonDates.length - 1])}` : "",
+    courier: courier ? { name: courier.name, text: `Assinado em ${formatDateTime(courier.date)}` } : null,
     jeferson: jefersonDates.length ? `Assinado em ${formatDateTime(jefersonDates[jefersonDates.length - 1])}` : ""
   };
+}
+
+function printCurrentGrdA4() {
+  const item = findGrd(currentGrdViewId);
+  if (!item) {
+    showToast("Abra um GRD antes de imprimir.");
+    return;
+  }
+  ensureGrdItem(item);
+  const pages = chunk(normalizeGrdEntries(item), 13);
+  const content = pages.map((pageEntries, pageIndex) => renderGrdA4Page(item, pageEntries, pageIndex + 1, pages.length)).join("");
+  const printWindow = window.open("", "_blank", "width=900,height=700");
+  if (!printWindow) {
+    showToast("Permita pop-ups para imprimir o A4 do GRD.");
+    return;
+  }
+  printWindow.document.open();
+  printWindow.document.write(`
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>GRD A4</title>
+        <link rel="stylesheet" href="styles.css?v=print-isolado-a4-20260714">
+        <style>
+          @page { size: A4 portrait; margin: 0; }
+          html, body { margin: 0; background: #fff; width: 210mm; }
+          body * { visibility: visible !important; }
+          .grd-a4 { width: 210mm !important; height: 297mm !important; min-height: 0 !important; aspect-ratio: auto !important; box-shadow: none !important; border: 2px solid #0037b8; margin: 0 !important; page-break-after: avoid !important; break-after: avoid-page !important; box-sizing: border-box; overflow: hidden; }
+          .grd-a4 + .grd-a4 { page-break-before: always; break-before: page; }
+        </style>
+      </head>
+      <body>${content}</body>
+    </html>
+  `);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(() => printWindow.print(), 500);
 }
 
 function renderGrdA4Logo(value, fallback, extraClass = "") {
@@ -3353,7 +3398,7 @@ function handleAction(event, action, dataset, user) {
     currentView = "grdView";
     render();
   }
-  if (action === "printGrd") window.print();
+  if (action === "printGrd") printCurrentGrdA4();
 }
 
 function toggleTheme() {
