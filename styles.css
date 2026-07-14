@@ -88,6 +88,25 @@ button {
   box-shadow: var(--shadow);
 }
 
+.login-help {
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.login-help strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.login-help p {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .app-shell {
   min-height: 100vh;
   display: block;
@@ -2757,6 +2776,12 @@ textarea {
 
 textarea {
   min-height: 92px;
+}
+
+.email-template-field textarea {
+  min-height: 180px;
+  line-height: 1.55;
+  white-space: pre-wrap;
 }
 
 .quick-search {
