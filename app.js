@@ -3,8 +3,8 @@ const CLOUD_CONFIG_KEY = "facilita-cloud-config-v1";
 const SYNC_CHANNEL_NAME = "facilita-data-sync";
 const CLIENT_ID = Math.random().toString(36).slice(2);
 const CLOUD_DEFAULTS = {
-  supabaseUrl: "",
-  supabaseAnonKey: "",
+  supabaseUrl: "https://pelhllzeghxmakwwzcuc.supabase.co",
+  supabaseAnonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBlbGhsbHplZ2h4bWFrd3d6Y3VjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQwNTA0NDAsImV4cCI6MjA5OTYyNjQ0MH0.s_b5eWgRWaUTChsn09LQA__-HNTx64fjPqspQHkGdlA",
   table: "facilita_app_state",
   rowId: "facilita-tamandua"
 };
@@ -14,6 +14,7 @@ let cloudLastUpdated = "";
 let cloudSaveTimer = null;
 let cloudPullTimer = null;
 let cloudSaving = false;
+let grdHistoryDetailedOpen = false;
 try {
   syncChannel = "BroadcastChannel" in window ? new BroadcastChannel(SYNC_CHANNEL_NAME) : null;
 } catch {
@@ -294,6 +295,7 @@ async function pullCloudData({ renderAfter = false } = {}) {
   const row = Array.isArray(rows) ? rows[0] : null;
   if (!row) {
     await pushCloudData();
+    startCloudPolling();
     return true;
   }
   if (row.updated_at && row.updated_at === cloudLastUpdated) return true;
@@ -2287,7 +2289,7 @@ function renderGrdEntryDates(entry) {
 
 function renderGrdHistory(item) {
   ensureGrdItem(item);
-  const detailed = data.settings.grdHistoryDetailed === true;
+  const detailed = grdHistoryDetailedOpen === true;
   const rows = [];
   (item.history || []).forEach((text) => rows.push(text));
   normalizeGrdEntries(item).forEach((entry) => {
@@ -3715,8 +3717,7 @@ function handleAction(event, action, dataset, user) {
   if (action === "editUser") editUser(dataset.id);
   if (action === "toggleUser") toggleUser(dataset.id);
   if (action === "toggleGrdHistoryDetail") {
-    data.settings.grdHistoryDetailed = data.settings.grdHistoryDetailed !== true;
-    saveData();
+    grdHistoryDetailedOpen = !grdHistoryDetailedOpen;
     render();
   }
   if (action === "printSchedule") printSchedule(dataset.id);
@@ -3752,6 +3753,7 @@ function handleAction(event, action, dataset, user) {
   if (action === "viewGrd") {
     currentGrdViewId = dataset.id;
     currentView = "grdView";
+    grdHistoryDetailedOpen = false;
     render();
   }
   if (action === "printGrd") printCurrentGrdA4();
@@ -4888,7 +4890,9 @@ function saveSettings(fd) {
   const settingsItem = data.settings.navItems.find((item) => item.key === "settings");
   if (settingsItem) settingsItem.visible = true;
   saveData();
-  initializeCloudSync();
+  if (hasCloudConfig()) {
+    pushCloudData().then(() => startCloudPolling()).catch(() => showToast("Configuracoes salvas localmente, mas nao foi possivel enviar para a base online."));
+  }
   showToast("Configuracoes salvas.");
   render();
 }
