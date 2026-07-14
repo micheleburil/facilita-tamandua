@@ -15,6 +15,9 @@ const defaultData = {
     heActionPosition: "below",
     heActionSize: "normal",
     heActionColor: "primary",
+    brandSubtitle: "Gestao inteligente de controles",
+    showSidebarLogo: true,
+    showA4Logos: true,
     brandIcon: "F",
     topActionIcon1: "☼",
     topActionIcon2: "◷",
@@ -189,6 +192,9 @@ function normalizeData(value) {
   value.settings.navItems = mergeNavItems(value.settings.navItems || []);
   value.settings.roleAccess = normalizeRoleAccess(value.settings.roleAccess || {});
   value.settings.themeMode = value.settings.themeMode || defaultData.settings.themeMode;
+  value.settings.brandSubtitle = value.settings.brandSubtitle ?? defaultData.settings.brandSubtitle;
+  value.settings.showSidebarLogo = value.settings.showSidebarLogo !== false;
+  value.settings.showA4Logos = value.settings.showA4Logos !== false;
   value.settings.homeSummaryMode = value.settings.homeSummaryMode || defaultData.settings.homeSummaryMode;
   value.settings.homeSummaryTitle = value.settings.homeSummaryTitle || defaultData.settings.homeSummaryTitle;
   const defaultFunctionByName = Object.fromEntries(employeeDefaults().map((item) => [normalizeText(item.name), item.defaultFunction]));
@@ -445,8 +451,8 @@ function renderApp(user) {
     <main class="app-shell">
       <aside class="app-sidebar">
         <div class="brand">
-          <span class="brand-mark">${renderIcon(data.settings.brandIcon || "F")}</span>
-          <span><strong>${esc(data.settings.appName || "Facilita")}</strong><small>Gestao inteligente<br>de controles</small></span>
+          ${data.settings.showSidebarLogo === false ? "" : `<span class="brand-mark">${renderIcon(data.settings.brandIcon || "F")}</span>`}
+          <span><strong>${esc(data.settings.appName || "Facilita")}</strong><small>${esc(data.settings.brandSubtitle || "Gestao inteligente de controles")}</small></span>
         </div>
         <nav class="nav">
           ${views.map(([key, label]) => `<button class="${currentView === key ? "active" : ""}" data-view="${key}"><span>${navIcon(key)}</span>${label}</button>`).join("")}
@@ -1063,6 +1069,28 @@ function renderGrdHomeDashboard() {
       ${barChart("Prazos", grdDeadlineRowsV2(rows))}
       ${barChart("Por tipo de ensaio", grdTypeRows(rows))}
     </section>
+    ${renderGrdLocationRadar(rows.slice(0, 12))}
+  `;
+}
+
+function renderGrdLocationRadar(rows) {
+  return `
+    <section class="card grd-location-radar">
+      <div class="section-title">
+        <div><h3>Onde esta cada ensaio</h3><span class="muted">Ultimas OS movimentadas, responsavel atual e etapa do fluxo.</span></div>
+        <button class="btn" data-action="openView" data-view="grdDashboard">Pesquisar OS</button>
+      </div>
+      <div class="location-list">
+        ${rows.map(({ grd, entry }) => `
+          <button class="location-item" data-action="viewGrd" data-id="${grd.id}">
+            <strong>${esc(entry.os || "-")}</strong>
+            <span>${esc(entry.company || grd.company || "-")}</span>
+            <em>${esc(entry.currentHolder || "-")}</em>
+            ${grdEntryBadge(entry.status)}
+          </button>
+        `).join("") || `<p class="muted">Nenhuma OS no fluxo ainda.</p>`}
+      </div>
+    </section>
   `;
 }
 
@@ -1125,8 +1153,20 @@ function renderGrdManagerV2() {
         <div><h3>Registros por OS</h3><span class="muted">Busca OS, protocolo, tipo de ensaio, responsavel e gargalo</span></div>
         ${currentUser().role === "admin" ? `<button class="btn primary" data-action="goNewGrd">Novo GRD</button>` : ""}
       </div>
+      ${renderGrdQuickSearch()}
       ${renderGrdTableV2(rows)}
     </section>
+  `;
+}
+
+function renderGrdQuickSearch() {
+  const filters = currentGrdFilters();
+  return `
+    <div class="quick-search">
+      <span>🔎</span>
+      <input name="grdFilterQuery" value="${esc(filters.query)}" placeholder="Pesquisar OS, protocolo, empresa ou tipo de ensaio" data-auto="grdFilters">
+      <button class="btn" data-action="applyGrdFilters">Buscar</button>
+    </div>
   `;
 }
 
@@ -1340,7 +1380,7 @@ function renderGrdTableV2(rows) {
               <td>${esc(entry.currentHolder || "-")}${entry.locationNote ? `<br><span class="muted">${esc(entry.locationNote)}</span>` : ""}</td>
               <td>${grdEntryBadge(entry.status)}${entry.pendingReason ? `<br><span class="muted">${esc(entry.pendingReason)}</span>` : ""}</td>
               <td>${daysInCurrentStep(entry, grd)} dia(s)<br><span class="muted">desde ${formatDate(String(grdStatusDate(entry) || grd.receivedDate || "").slice(0, 10)) || "-"}</span></td>
-              <td class="btn-row">
+              <td class="table-actions">
                 <button class="btn" data-action="viewGrd" data-id="${grd.id}">Abrir</button>
                 ${currentUser().role === "admin" ? `<button class="btn danger" data-action="deleteGrd" data-id="${grd.id}">Apagar</button>` : ""}
               </td>
@@ -1807,6 +1847,7 @@ function renderGrdA4Page(item, entries, pageNumber, totalPages) {
 }
 
 function renderGrdA4Logo(value, fallback, extraClass = "") {
+  if (data.settings.showA4Logos === false) return `<div class="grd-a4-logo ${extraClass}"></div>`;
   const current = value || fallback;
   if (String(current).startsWith("http") || String(current).startsWith("data:")) return `<div class="grd-a4-logo ${extraClass}"><img src="${esc(current)}" alt="${esc(fallback)}"></div>`;
   return `<div class="grd-a4-logo ${extraClass}">${esc(current)}</div>`;
@@ -1831,7 +1872,7 @@ function barChart(title, rows) {
 }
 
 function metric(label, value, color, icon = "") {
-  return `<article class="card metric"><span class="metric-icon metric-${color}">${renderIcon(icon || metricIcon(label))}</span><div><strong>${value}</strong><span>${label}</span></div></article>`;
+  return `<article class="card metric metric-count metric-tone-${color}"><strong class="metric-value">${esc(value)}</strong><span class="metric-label">${esc(label)}</span></article>`;
 }
 
 function renderIcon(icon) {
@@ -2149,6 +2190,7 @@ function renderSettings() {
           <div class="settings-section-head"><div><h3>Informações do app</h3><p class="muted">Edite os textos que aparecem no sistema.</p></div></div>
         <div class="form-grid">
           ${input("appName", "Nome do app", s.appName)}
+          ${input("brandSubtitle", "Subtitulo perto da logo", s.brandSubtitle || "Gestao inteligente de controles")}
           ${input("homeTitle", "Título da tela inicial", s.homeTitle)}
           ${input("homeSubtitle", "Subtitulo da tela inicial", s.homeSubtitle)}
           ${input("description", "Descrição do app", s.description, "textarea")}
@@ -2166,6 +2208,14 @@ function renderSettings() {
           <div class="section-title"><div><h3>Logos, imagens e simbolos</h3><p class="muted">Troque por texto, URL ou arquivo anexado</p></div></div>
           <div class="form-grid">
           ${fileSettingField("brandIcon", "Logo/simbolo do menu lateral", s.brandIcon, "Aparece no topo do menu lateral, ao lado do nome Facilita.")}
+          <div class="field">
+            <label>Mostrar logo no menu lateral</label>
+            <select name="showSidebarLogo">
+              <option value="true" ${s.showSidebarLogo !== false ? "selected" : ""}>Sim</option>
+              <option value="false" ${s.showSidebarLogo === false ? "selected" : ""}>Nao</option>
+            </select>
+            <span class="field-help">Use Nao para deixar Inicio, GRD e Relatorios sem logo no menu lateral.</span>
+          </div>
           ${fileSettingField("topActionIcon1", "Simbolo superior 1", s.topActionIcon1, "Aparece no canto superior direito, no primeiro botao redondo do cabecalho.")}
           ${fileSettingField("topActionIcon2", "Simbolo superior 2", s.topActionIcon2, "Reserva para o segundo simbolo superior quando usado no cabecalho.")}
           ${fileSettingField("defaultHeroImage", "Ilustracao padrao", s.defaultHeroImage, "Aparece no banner da tela inicial quando nao houver imagem inicial propria.")}
@@ -2185,6 +2235,13 @@ function renderSettings() {
           </div>
           ${fileSettingField("logoErg", "Logo ERG da guia GRD/A4", s.logoErg, "Aparece no canto esquerdo da guia GRD em A4 e nos relatorios.")}
           ${fileSettingField("logoVale", "Logo Vale da guia GRD/A4", s.logoVale, "Aparece no canto direito da guia GRD em A4 e nos relatorios.")}
+          <div class="field">
+            <label>Mostrar logos na guia A4/relatorios</label>
+            <select name="showA4Logos">
+              <option value="true" ${s.showA4Logos !== false ? "selected" : ""}>Sim</option>
+              <option value="false" ${s.showA4Logos === false ? "selected" : ""}>Nao</option>
+            </select>
+          </div>
           </div>
         </section>
         <section class="${pageClass("cfg-cores")}" id="cfg-cores">
@@ -2762,9 +2819,9 @@ function renderAbout() {
     <div class="page-head"><div><h1>Sobre</h1><p>Informacoes gerais do sistema.</p></div>${backButton("dashboard", "Voltar")}</div>
     <section class="card">
       <div class="report-header">
-        ${logoSlot(data.settings.logoErg || "ERG")}
+        ${data.settings.showA4Logos === false ? "" : logoSlot(data.settings.logoErg || "ERG")}
         <div><h2>${esc(data.settings.appName)}</h2><p>${esc(data.settings.description)}</p></div>
-        ${logoSlot(data.settings.logoVale || "VALE")}
+        ${data.settings.showA4Logos === false ? "" : logoSlot(data.settings.logoVale || "VALE")}
       </div>
       <p>${esc(data.settings.about)}</p>
       <p><strong>Projeto:</strong> ${esc(data.settings.project)}</p>
@@ -2993,15 +3050,15 @@ function saveGrd(fd) {
 function readGrdEntryRows() {
   const rows = [...document.querySelectorAll("[data-grd-os-row]")];
   if (rows.length) {
-    return rows.map((row) => ({
+    return rows.map((row, index) => ({
       id: uid(),
-      os: row.querySelector('[name="entryOs"]')?.value.trim() || "",
+      os: row.querySelector('[name="entryOs"]')?.value.trim() || `OS ${index + 1}`,
       testDate: row.querySelector('[name="entryTestDate"]')?.value.trim() || "",
-      company: row.querySelector('[name="entryCompany"]')?.value.trim() || "",
+      company: row.querySelector('[name="entryCompany"]')?.value.trim() || "Sem empresa",
       protocol: row.querySelector('[name="entryProtocol"]')?.value.trim() || "",
       testType: row.querySelector('[name="entryTestType"]')?.value.trim() || "",
       description: ""
-    })).filter((entry) => entry.os && entry.company && entry.testType);
+    })).filter((entry) => entry.os || entry.company || entry.protocol || entry.testType);
   }
   return parseGrdEntries("", {});
 }
@@ -3146,9 +3203,9 @@ function deleteGrd(id) {
 
 function applyGrdFilters() {
   const wrap = document.getElementById("grdFilters");
-  if (!wrap) return;
   const fd = new FormData();
-  wrap.querySelectorAll("input, select").forEach((el) => fd.set(el.name, el.value));
+  if (wrap) wrap.querySelectorAll("input, select").forEach((el) => fd.set(el.name, el.value));
+  document.querySelectorAll(".quick-search input, .quick-search select").forEach((el) => fd.set(el.name, el.value));
   ["grdFilterPeriod", "grdFilterDate", "grdFilterMonth", "grdFilterStart", "grdFilterEnd", "grdFilterHolder", "grdFilterStatus", "grdFilterTestType", "grdFilterQuery"].forEach((key) => {
     data.settings[key] = fd.get(key) || "";
   });
@@ -3174,7 +3231,8 @@ function selectAllGrdOs() {
 
 function selectedOrAllEntries(item, allowedStatuses = []) {
   const selected = selectedGrdEntryIds();
-  const entries = normalizeGrdEntries(item);
+  ensureGrdItem(item);
+  const entries = Array.isArray(item.entries) ? item.entries : [];
   const chosen = selected.length ? entries.filter((entry) => selected.includes(entry.id)) : entries;
   return allowedStatuses.length ? chosen.filter((entry) => allowedStatuses.includes(entry.status)) : chosen;
 }
@@ -3750,6 +3808,7 @@ function saveSettings(fd) {
   }
   const simpleSettings = [
     "appName",
+    "brandSubtitle",
     "description",
     "intro",
     "about",
@@ -3798,6 +3857,8 @@ function saveSettings(fd) {
   });
   data.settings.recentVisible = fd.get("recentVisible") === "true";
   data.settings.showHomeImage = fd.get("showHomeImage") === "true";
+  data.settings.showSidebarLogo = fd.get("showSidebarLogo") !== "false";
+  data.settings.showA4Logos = fd.get("showA4Logos") !== "false";
   data.settings.homeSummaryCards = [...document.querySelectorAll("[data-home-summary-card-row]")].map((row, index) => ({
     id: row.dataset.id || uid(),
     order: Number(row.querySelector('[name="homeSummaryCardOrder"]').value || index + 1),
@@ -4009,7 +4070,7 @@ function reportHtml(items, type, schedule = null) {
   return `
     <!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>${printCss}</style></head>
     <body><main class="report-print">
-      <div class="report-header">${logoSlot(data.settings.logoErg || "ERG")}<div><h1>${title}</h1><p>${esc(data.settings.project)} | ${esc(data.settings.contractor)}</p></div>${logoSlot(data.settings.logoVale || "VALE")}</div>
+    <div class="report-header">${data.settings.showA4Logos === false ? "" : logoSlot(data.settings.logoErg || "ERG")}<div><h1>${title}</h1><p>${esc(data.settings.project)} | ${esc(data.settings.contractor)}</p></div>${data.settings.showA4Logos === false ? "" : logoSlot(data.settings.logoVale || "VALE")}</div>
       <p><strong>Gerado em:</strong> ${new Date().toLocaleString("pt-BR")}</p>
       <p><strong>Horas 50%:</strong> ${minutesToHours(total50)} | <strong>Horas 100%:</strong> ${minutesToHours(total100)} | <strong>Total:</strong> ${minutesToHours(total50 + total100)}</p>
       ${schedule ? `<p><strong>Justificativa:</strong> ${esc(schedule.reason)}</p><p><strong>Historico:</strong><br>${schedule.history.map(esc).join("<br>")}</p>` : ""}
