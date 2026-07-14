@@ -139,7 +139,7 @@ button {
 .nav button {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0;
   min-height: 34px;
   padding: 0 12px;
   color: var(--text);
@@ -294,11 +294,7 @@ button {
 }
 
 .nav button span {
-  width: 18px;
-  height: 18px;
-  display: inline-grid;
-  place-items: center;
-  flex: 0 0 18px;
+  display: none;
 }
 
 .metric-green {
@@ -1755,7 +1751,7 @@ th {
 .nav button {
   min-height: 46px;
   justify-content: flex-start;
-  gap: 12px;
+  gap: 0;
   padding: 0 14px;
   text-align: left;
   font-weight: 700;
