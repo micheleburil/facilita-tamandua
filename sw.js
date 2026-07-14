@@ -1,4 +1,4 @@
-const CACHE_NAME = "facilita-historico-farol-pendencias-20260714";
+const CACHE_NAME = "facilita-usuarios-login-sync-20260714";
 const ASSETS = [
   "./",
   "./index.html",
