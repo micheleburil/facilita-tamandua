@@ -1,4 +1,4 @@
-const CACHE_NAME = "facilita-login-a4-assinaturas-20260714";
+const CACHE_NAME = "facilita-fila-print-assinaturas-20260714";
 const ASSETS = [
   "./",
   "./index.html",
