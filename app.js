@@ -277,7 +277,7 @@ function normalizeRoleAccess(savedAccess) {
     const saved = role === "admin" ? savedRaw : savedRaw.filter((view) => !adminOnlyViews.includes(view));
     const forced = role === "admin"
       ? ["dashboard", "grdDashboard", "reports", "approvals", "micheleAccess", "settings", "users", "employees", "functions", "newGrd", "newSchedule", "grdView", "heDashboard", "waterDashboard", "schedules"]
-      : ["dashboard", "grdDashboard", "grdView", "settings", "about"];
+      : ["dashboard", "grdDashboard", "grdView"];
     return [role, [...new Set([...saved, ...forced])]];
   }));
 }
@@ -690,6 +690,11 @@ function bindViewEvents(user) {
           saveData();
           render();
         }
+      }
+      if (el.dataset.auto === "dashboardPendingMode") {
+        data.settings.dashboardPendingMode = el.value;
+        saveData();
+        render();
       }
       if (el.dataset.auto === "grdFilters") {
         applyGrdFilters();
@@ -1180,24 +1185,56 @@ function renderGrdHomeDashboard() {
 }
 
 function renderGrdLocationRadar(rows) {
+  const mode = data.settings.dashboardPendingMode || "grd";
+  const grdGroups = groupActionRowsByGrd(rows);
   return `
     <section class="card grd-location-radar">
       <div class="section-title">
-        <div><h3>${esc(pageText("locationTitle"))}</h3><span class="muted">OS aguardando movimentacao do usuario logado.</span></div>
-        <button class="btn" data-action="openView" data-view="grdDashboard">${esc(pageText("locationButton"))}</button>
+        <div><h3>${esc(pageText("locationTitle"))}</h3><span class="muted">GRDs aguardando movimentacao do usuario logado.</span></div>
+        <div class="location-tools">
+          <select name="dashboardPendingMode" data-auto="dashboardPendingMode">
+            <option value="grd" ${mode === "grd" ? "selected" : ""}>Ver por GRD</option>
+            <option value="os" ${mode === "os" ? "selected" : ""}>Ver por OS</option>
+          </select>
+          <button class="btn" data-action="openView" data-view="grdDashboard">${esc(pageText("locationButton"))}</button>
+        </div>
       </div>
       <div class="location-list">
-        ${rows.map(({ grd, entry }) => `
+        ${mode === "os" ? rows.map(({ grd, entry }) => `
           <button class="location-item" data-action="viewGrd" data-id="${grd.id}">
             <strong>${esc(entry.os || "-")}</strong>
             <span>${esc(entry.company || grd.company || "-")}</span>
             <em>${esc(entry.currentHolder || "-")}</em>
             ${grdEntryBadge(entry.status)}
           </button>
-        `).join("") || `<p class="muted">Nenhuma OS aguardando sua acao agora. Para localizar qualquer OS, use GRD > Filtros e busca.</p>`}
+        `).join("") : grdGroups.map(({ grd, entries, companies, holders }) => `
+          <button class="location-item location-item-grd" data-action="viewGrd" data-id="${grd.id}">
+            <strong>${esc(grd.grdCode || grd.id)}</strong>
+            <span>${entries.length} OS - ${esc(companies.join(" / ") || "-")}</span>
+            <em>${esc(holders.join(" / ") || "-")}</em>
+            <small>${esc(entries.map((entry) => entry.os || "-").join(", "))}</small>
+          </button>
+        `).join("")}
+        ${(mode === "os" ? rows.length : grdGroups.length) ? "" : `<p class="muted">Nenhum GRD aguardando sua acao agora. Para localizar qualquer OS, use GRD > Filtros e busca.</p>`}
       </div>
     </section>
   `;
+}
+
+function groupActionRowsByGrd(rows) {
+  const groups = new Map();
+  rows.forEach(({ grd, entry }) => {
+    if (!groups.has(grd.id)) groups.set(grd.id, { grd, entries: [], companies: new Set(), holders: new Set() });
+    const group = groups.get(grd.id);
+    group.entries.push(entry);
+    if (entry.company || grd.company) group.companies.add(entry.company || grd.company);
+    if (entry.currentHolder) group.holders.add(entry.currentHolder);
+  });
+  return [...groups.values()].map((group) => ({
+    ...group,
+    companies: [...group.companies],
+    holders: [...group.holders]
+  }));
 }
 
 function grdActionRowsForUser(user, rows = grdEntries()) {
@@ -1630,8 +1667,8 @@ function grdTypeRows(rows) {
 
 function grdStageTimeRows(rows) {
   const list = grdStageTotals(rows);
-  const max = Math.max(...list.map((row) => row.days), 1);
-  return list.length ? list.map((row, index) => [row.label, row.days, ["blue", "yellow", "green", "gray", "red"][index], max]) : [["Sem dados", 0, "gray", 1]];
+  const max = Math.max(...list.map((row) => row.hours), 1);
+  return list.length ? list.map((row, index) => [row.label, row.hours, ["blue", "yellow", "green", "gray", "red"][index], max, formatStageDuration(row.days)]) : [["Sem dados", 0, "gray", 1, "0h"]];
 }
 
 function grdStageTotals(rows) {
@@ -1645,7 +1682,8 @@ function grdStageTotals(rows) {
   return stages.map(([key, label]) => {
     const values = rows.map(({ grd, entry }) => stageDays(key, grd, entry)).filter((value) => value !== null);
     const avg = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
-    return { key, label, days: Number(avg.toFixed(1)), count: values.length };
+    const days = Number(avg.toFixed(2));
+    return { key, label, days, hours: Number((days * 24).toFixed(1)), count: values.length };
   }).filter((row) => row.count);
 }
 
@@ -1675,7 +1713,7 @@ function diffDays(start, end) {
 
 function formatStageDuration(days) {
   const value = Number(days || 0);
-  if (value < 1) return `${Math.round(value * 24)}h`;
+  if (value < 1) return `${Math.max(1, Math.round(value * 24))}h`;
   return value % 1 === 0 ? String(value) : value.toFixed(1);
 }
 
@@ -2078,15 +2116,52 @@ function renderGrdEntryDates(entry) {
 
 function renderGrdHistory(item) {
   ensureGrdItem(item);
+  const detailed = data.settings.grdHistoryDetailed === true;
   const rows = [];
   (item.history || []).forEach((text) => rows.push(text));
   normalizeGrdEntries(item).forEach((entry) => {
     (entry.history || []).forEach((text) => rows.push(`${entry.os}: ${text}`));
   });
-  const unique = [...new Set(rows)].slice(-24).reverse();
-  return unique.length
-    ? `<div class="compact-timeline">${unique.map((text) => `<div>${esc(text)}</div>`).join("")}</div>`
-    : `<p class="muted">Nenhum historico registrado ainda.</p>`;
+  const unique = [...new Set(rows)].slice(-80).reverse();
+  const summary = renderGrdHistorySummary(item);
+  const detailButton = `<button class="btn" type="button" data-action="toggleGrdHistoryDetail">${detailed ? "Resumir histórico" : "Detalhar histórico"}</button>`;
+  if (detailed) {
+    return `${detailButton}${unique.length ? `<div class="compact-timeline">${unique.map((text) => `<div>${esc(text)}</div>`).join("")}</div>` : `<p class="muted">Nenhum histórico registrado ainda.</p>`}`;
+  }
+  return `${detailButton}${summary || `<p class="muted">Nenhum histórico relevante registrado ainda.</p>`}`;
+}
+
+function renderGrdHistorySummary(item) {
+  const entries = normalizeGrdEntries(item);
+  const events = [];
+  const pushEvent = (label, date, detail = "") => {
+    if (!date) return;
+    events.push({ label, date, detail });
+  };
+  pushEvent("GRD lançado", item.createdAt || item.receivedDate, item.createdBy || "");
+  const deliveredMarllon = entries.filter((entry) => entry.marllonDeliveredAt);
+  const returnedMarllon = entries.filter((entry) => entry.marllonReturnedAt);
+  const deliveredJeferson = entries.filter((entry) => entry.jefersonDeliveredAt);
+  const returnedJeferson = entries.filter((entry) => entry.jefersonReturnedAt);
+  const scanned = entries.filter((entry) => entry.scannedAt);
+  const archived = entries.filter((entry) => entry.archivedAt || entry.status === "done");
+  const pending = entries.filter((entry) => String(entry.status).startsWith("pending") || entry.pendingReason);
+  pushEvent("Enviado para Marllon", latestEntryDate(deliveredMarllon, "marllonDeliveredAt"), `${deliveredMarllon.length} OS`);
+  pushEvent("Validado/devolvido por Marllon", latestEntryDate(returnedMarllon, "marllonReturnedAt"), `${returnedMarllon.length} OS`);
+  pushEvent("Enviado para Jeferson", latestEntryDate(deliveredJeferson, "jefersonDeliveredAt"), `${deliveredJeferson.length} OS`);
+  pushEvent("Validado/devolvido por Jeferson", latestEntryDate(returnedJeferson, "jefersonReturnedAt"), `${returnedJeferson.length} OS`);
+  pushEvent("Digitalizado", latestEntryDate(scanned, "scannedAt"), `${scanned.length} OS`);
+  pushEvent("Arquivado/concluído", latestEntryDate(archived, "archivedAt") || latestEntryDate(archived, "updatedAt") || latestEntryDate(archived, "scannedAt"), `${archived.length} OS`);
+  if (pending.length) events.push({ label: "Pendências registradas", date: latestEntryDate(pending, "pendingAt") || new Date().toISOString(), detail: `${pending.length} OS` });
+  return events
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+    .slice(0, 8)
+    .map((event) => `<div class="history-summary-item"><strong>${esc(event.label)}</strong><span>${formatDateTime(event.date)}</span>${event.detail ? `<em>${esc(event.detail)}</em>` : ""}</div>`)
+    .join("");
+}
+
+function latestEntryDate(entries, key) {
+  return entries.map((entry) => entry[key]).filter(Boolean).sort().pop() || "";
 }
 
 function renderGrdStageTimePanel(item) {
@@ -2098,7 +2173,7 @@ function renderGrdStageTimePanel(item) {
         ${rows.map((row) => `
           <div class="stage-time-card">
             <strong>${esc(row.label)}</strong>
-            <span>${formatStageDuration(row.days)} dia(s)</span>
+            <span>${formatStageDuration(row.days)}</span>
             <small>${row.count} OS considerada(s)</small>
           </div>
         `).join("") || `<p class="muted">Ainda sem datas suficientes para calcular.</p>`}
@@ -2237,9 +2312,9 @@ function barChart(title, rows) {
   return `
     <article class="card chart-card">
       <h3>${esc(grdFarolDisplayLabel(title))}</h3>
-      ${rows.map(([label, value, color, max]) => {
+      ${rows.map(([label, value, color, max, displayValue]) => {
         const width = Math.max(3, Math.min(100, (Number(value) / Math.max(Number(max), 1)) * 100));
-        return `<div class="bar-line"><span>${esc(grdFarolDisplayLabel(label))}</span><div class="bar-track"><i class="bar-fill bar-${color}" style="width:${width}%"></i></div><strong>${value}</strong></div>`;
+        return `<div class="bar-line"><span>${esc(grdFarolDisplayLabel(label))}</span><div class="bar-track"><i class="bar-fill bar-${color}" style="width:${width}%"></i></div><strong>${esc(displayValue ?? value)}</strong></div>`;
       }).join("")}
     </article>
   `;
@@ -3422,6 +3497,11 @@ function handleAction(event, action, dataset, user) {
   if (action === "editCatalog") editCatalog(dataset.key, dataset.id);
   if (action === "editUser") editUser(dataset.id);
   if (action === "toggleUser") toggleUser(dataset.id);
+  if (action === "toggleGrdHistoryDetail") {
+    data.settings.grdHistoryDetailed = data.settings.grdHistoryDetailed !== true;
+    saveData();
+    render();
+  }
   if (action === "printSchedule") printSchedule(dataset.id);
   if (action === "exportSchedule") exportSchedule(dataset.id);
   if (action === "exportScheduleChoice") exportScheduleChoice(dataset.id);
