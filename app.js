@@ -1,7 +1,19 @@
 const STORAGE_KEY = "facilita-he-data-v1";
+const CLOUD_CONFIG_KEY = "facilita-cloud-config-v1";
 const SYNC_CHANNEL_NAME = "facilita-data-sync";
 const CLIENT_ID = Math.random().toString(36).slice(2);
+const CLOUD_DEFAULTS = {
+  supabaseUrl: "",
+  supabaseAnonKey: "",
+  table: "facilita_app_state",
+  rowId: "facilita-tamandua"
+};
 let syncChannel = null;
+let cloudConfig = loadCloudConfig();
+let cloudLastUpdated = "";
+let cloudSaveTimer = null;
+let cloudPullTimer = null;
+let cloudSaving = false;
 try {
   syncChannel = "BroadcastChannel" in window ? new BroadcastChannel(SYNC_CHANNEL_NAME) : null;
 } catch {
@@ -219,6 +231,125 @@ function loadData() {
   }
 }
 
+function loadCloudConfig() {
+  try {
+    return { ...CLOUD_DEFAULTS, ...JSON.parse(localStorage.getItem(CLOUD_CONFIG_KEY) || "{}") };
+  } catch {
+    return { ...CLOUD_DEFAULTS };
+  }
+}
+
+function saveCloudConfigFromSettings(fd) {
+  cloudConfig = {
+    supabaseUrl: String(fd.get("supabaseUrl") || cloudConfig.supabaseUrl || "").trim(),
+    supabaseAnonKey: String(fd.get("supabaseAnonKey") || cloudConfig.supabaseAnonKey || "").trim(),
+    table: String(fd.get("supabaseTable") || cloudConfig.table || CLOUD_DEFAULTS.table).trim() || CLOUD_DEFAULTS.table,
+    rowId: String(fd.get("supabaseRowId") || cloudConfig.rowId || CLOUD_DEFAULTS.rowId).trim() || CLOUD_DEFAULTS.rowId
+  };
+  localStorage.setItem(CLOUD_CONFIG_KEY, JSON.stringify(cloudConfig));
+}
+
+function hasCloudConfig() {
+  return Boolean(cloudConfig.supabaseUrl && cloudConfig.supabaseAnonKey && cloudConfig.table && cloudConfig.rowId);
+}
+
+function cloudEndpoint() {
+  return `${cloudConfig.supabaseUrl.replace(/\/+$/, "")}/rest/v1/${encodeURIComponent(cloudConfig.table)}`;
+}
+
+function sharedDataSnapshot() {
+  return {
+    ...data,
+    sessionEmail: ""
+  };
+}
+
+function applySharedData(remoteData, updatedAt = "") {
+  const sessionEmail = data.sessionEmail;
+  data = normalizeData(mergeData(structuredClone(defaultData), remoteData || {}));
+  data.sessionEmail = sessionEmail;
+  cloudLastUpdated = updatedAt || cloudLastUpdated;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+async function cloudFetch(path = "", options = {}) {
+  if (!hasCloudConfig()) return null;
+  const response = await fetch(`${cloudEndpoint()}${path}`, {
+    ...options,
+    headers: {
+      apikey: cloudConfig.supabaseAnonKey,
+      Authorization: `Bearer ${cloudConfig.supabaseAnonKey}`,
+      "Content-Type": "application/json",
+      ...(options.headers || {})
+    }
+  });
+  if (!response.ok) throw new Error(`Supabase ${response.status}`);
+  if (response.status === 204) return null;
+  return response.json();
+}
+
+async function pullCloudData({ renderAfter = false } = {}) {
+  if (!hasCloudConfig()) return false;
+  const rows = await cloudFetch(`?id=eq.${encodeURIComponent(cloudConfig.rowId)}&select=id,data,updated_at`);
+  const row = Array.isArray(rows) ? rows[0] : null;
+  if (!row) {
+    await pushCloudData();
+    return true;
+  }
+  if (row.updated_at && row.updated_at === cloudLastUpdated) return true;
+  applySharedData(row.data, row.updated_at);
+  if (renderAfter) render();
+  return true;
+}
+
+async function pushCloudData() {
+  if (!hasCloudConfig() || cloudSaving) return false;
+  cloudSaving = true;
+  try {
+    const payload = {
+      id: cloudConfig.rowId,
+      data: sharedDataSnapshot(),
+      updated_at: new Date().toISOString()
+    };
+    const rows = await cloudFetch("?on_conflict=id", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+      body: JSON.stringify(payload)
+    });
+    const row = Array.isArray(rows) ? rows[0] : null;
+    cloudLastUpdated = row?.updated_at || payload.updated_at;
+    return true;
+  } finally {
+    cloudSaving = false;
+  }
+}
+
+function scheduleCloudSave() {
+  if (!hasCloudConfig() || !cloudLastUpdated) return;
+  clearTimeout(cloudSaveTimer);
+  cloudSaveTimer = setTimeout(() => {
+    pushCloudData().catch(() => showToast("Nao foi possivel sincronizar com a base online."));
+  }, 500);
+}
+
+function startCloudPolling() {
+  clearInterval(cloudPullTimer);
+  if (!hasCloudConfig()) return;
+  cloudPullTimer = setInterval(() => {
+    pullCloudData({ renderAfter: true }).catch(() => {});
+  }, 12000);
+}
+
+async function initializeCloudSync() {
+  if (!hasCloudConfig()) return;
+  try {
+    await pullCloudData({ renderAfter: false });
+    startCloudPolling();
+  } catch {
+    showToast("Base online nao conectada. Verifique URL, chave e tabela do Supabase.");
+  }
+}
+
 function mergeData(base, saved) {
   return {
     ...base,
@@ -231,6 +362,7 @@ function saveData(options = {}) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   if (options.silent !== true) {
     syncChannel?.postMessage({ type: "dataUpdated", sender: CLIENT_ID, at: Date.now() });
+    scheduleCloudSave();
   }
 }
 
@@ -2643,7 +2775,7 @@ function renderUsers() {
       </div>
       <div class="notice-box sync-box">
         <strong>Sincronizacao</strong>
-        <span>As alteracoes atualizam automaticamente outras abas e o app instalado no mesmo Chrome. Para varios computadores ou celulares, sera necessario conectar uma base online gratuita.</span>
+        <span>${hasCloudConfig() ? "Base online configurada: usuarios e GRDs serao compartilhados entre computadores." : "Sem Supabase configurado, os dados ficam apenas neste navegador. Configure em Configuracoes > Sincronizacao."}</span>
       </div>
       <form class="form-grid" data-form="user">
         <div class="field"><label>Nome</label><input name="name" list="userNameSuggestions" required></div>
@@ -2685,6 +2817,7 @@ function renderSettings() {
           ${tab("cfg-regras", "Regras")}
           ${tab("cfg-botoes-he", "Botoes HE")}
           ${tab("cfg-emails", "E-mails")}
+          ${tab("cfg-sync", "Sincronizacao")}
         </div>
         ${renderProfileSettings(currentUser())}
         <section class="${pageClass("cfg-aparencia", "settings-simple")}" id="cfg-aparencia">
@@ -2933,6 +3066,39 @@ function renderSettings() {
           </div>
         </div>
       </section>
+      <section class="${pageClass("cfg-sync")}" id="cfg-sync">
+        <div class="section-title"><div><h3>Sincronizacao online</h3><p class="muted">Conecte uma base Supabase para todos os computadores verem os mesmos GRDs, usuarios e historicos.</p></div></div>
+        <div class="notice-box sync-box">
+          <strong>Status</strong>
+          <span>${hasCloudConfig() ? "Base online configurada neste navegador." : "Aguardando URL e chave anon public do Supabase."}</span>
+        </div>
+        <div class="form-grid">
+          <div class="field full"><label>Supabase Project URL</label><input name="supabaseUrl" value="${esc(cloudConfig.supabaseUrl)}" placeholder="https://xxxx.supabase.co"></div>
+          <div class="field full"><label>Supabase anon public key</label><input name="supabaseAnonKey" value="${esc(cloudConfig.supabaseAnonKey)}" placeholder="eyJ..."></div>
+          <div class="field"><label>Tabela</label><input name="supabaseTable" value="${esc(cloudConfig.table || CLOUD_DEFAULTS.table)}"></div>
+          <div class="field"><label>Identificador do app</label><input name="supabaseRowId" value="${esc(cloudConfig.rowId || CLOUD_DEFAULTS.rowId)}"></div>
+        </div>
+        <div class="notice-box">
+          <strong>SQL da tabela</strong>
+          <span>Crie esta tabela no Supabase antes de conectar:</span>
+          <pre class="code-help">create table facilita_app_state (
+  id text primary key,
+  data jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
+alter table facilita_app_state enable row level security;
+
+create policy "facilita_select" on facilita_app_state
+for select using (true);
+
+create policy "facilita_insert" on facilita_app_state
+for insert with check (true);
+
+create policy "facilita_update" on facilita_app_state
+for update using (true) with check (true);</pre>
+        </div>
+      </section>
       <div class="settings-save"><button class="btn primary" type="submit">Salvar alteracoes</button></div>
       <section class="settings-tip">
         <div><strong>♡ Dica</strong><br><span>As alterações são aplicadas automaticamente. Visualize o resultado no app.</span></div>
@@ -2969,7 +3135,7 @@ function renderThemeSettings() {
 }
 
 function activeSettingsSection() {
-  const allowed = ["cfg-aparencia", "cfg-logos", "cfg-cores", "cfg-abas", "cfg-acessos", "cfg-farol", "cfg-regras", "cfg-botoes-he", "cfg-emails"];
+  const allowed = ["cfg-aparencia", "cfg-logos", "cfg-cores", "cfg-abas", "cfg-acessos", "cfg-farol", "cfg-regras", "cfg-botoes-he", "cfg-emails", "cfg-sync"];
   const current = String(location.hash || "").replace("#", "");
   return allowed.includes(current) ? current : "cfg-aparencia";
 }
@@ -4601,6 +4767,7 @@ function editUser(id) {
 
 function saveSettings(fd) {
   if (!saveProfileFromSettings(fd)) return;
+  saveCloudConfigFromSettings(fd);
   if (currentUser().role !== "admin") {
     data.settings.themeMode = fd.get("themeMode") || "light";
     saveData();
@@ -4721,6 +4888,7 @@ function saveSettings(fd) {
   const settingsItem = data.settings.navItems.find((item) => item.key === "settings");
   if (settingsItem) settingsItem.visible = true;
   saveData();
+  initializeCloudSync();
   showToast("Configuracoes salvas.");
   render();
 }
@@ -5075,7 +5243,12 @@ function showToast(message) {
   toastTimer = setTimeout(() => toast.remove(), 3500);
 }
 
-render();
+async function bootApp() {
+  await initializeCloudSync();
+  render();
+}
+
+bootApp();
 
 
 
