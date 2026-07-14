@@ -234,7 +234,15 @@ function loadData() {
 
 function loadCloudConfig() {
   try {
-    return { ...CLOUD_DEFAULTS, ...JSON.parse(localStorage.getItem(CLOUD_CONFIG_KEY) || "{}") };
+    const saved = JSON.parse(localStorage.getItem(CLOUD_CONFIG_KEY) || "{}");
+    return {
+      ...CLOUD_DEFAULTS,
+      ...saved,
+      supabaseUrl: String(saved.supabaseUrl || CLOUD_DEFAULTS.supabaseUrl || "").trim(),
+      supabaseAnonKey: String(saved.supabaseAnonKey || CLOUD_DEFAULTS.supabaseAnonKey || "").trim(),
+      table: String(saved.table || CLOUD_DEFAULTS.table || "").trim(),
+      rowId: String(saved.rowId || CLOUD_DEFAULTS.rowId || "").trim()
+    };
   } catch {
     return { ...CLOUD_DEFAULTS };
   }
