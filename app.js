@@ -144,8 +144,8 @@ const defaultData = {
     marllonEmail: "marllon@empresa.com",
     jefersonEmail: "jeferson@empresa.com",
     grdEmailSubject: "GRD {grd} aguardando assinatura",
-    grdEmailBodyMarllon: "Ola Marllon,\n\nO GRD {grd} esta com {qtd} OS aguardando sua validacao/assinatura.\nData: {data}\nResponsavel atual: {responsavel}\n\nObrigada.",
-    grdEmailBodyJeferson: "Ola Jeferson,\n\nO GRD {grd} esta com {qtd} OS aguardando sua validacao/assinatura.\nData: {data}\nResponsavel atual: {responsavel}\n\nObrigada."
+    grdEmailBodyMarllon: "Ola Marllon,\n\nO GRD {grd} esta com {qtd} OS aguardando sua validacao/assinatura.\nEmpresas: {empresas}\nOS: {os}\nAcesse: {link}\n\nA guia A4 fica disponivel no botao Imprimir A4 dentro do GRD.\n\nObrigada.",
+    grdEmailBodyJeferson: "Ola Jeferson,\n\nO GRD {grd} esta com {qtd} OS aguardando sua validacao/assinatura.\nEmpresas: {empresas}\nOS: {os}\nAcesse: {link}\n\nA guia A4 fica disponivel no botao Imprimir A4 dentro do GRD.\n\nObrigada."
   },
   users: [
     { id: uid(), name: "Michele Buril", email: "michele@empresa.com", password: "123456", role: "admin", active: true },
@@ -238,6 +238,8 @@ function normalizeData(value) {
   value.settings.pageTexts = { ...defaultData.settings.pageTexts, ...(value.settings.pageTexts || {}) };
   if (value.settings.pageTexts.recordsTitle === "Registros por OS") value.settings.pageTexts.recordsTitle = defaultData.settings.pageTexts.recordsTitle;
   if (value.settings.pageTexts.recordsSubtitle === "Busca OS, protocolo, tipo de ensaio, responsavel e gargalo") value.settings.pageTexts.recordsSubtitle = defaultData.settings.pageTexts.recordsSubtitle;
+  if (String(value.settings.grdEmailBodyMarllon || "").startsWith("Ola Marllon,\n\nO GRD {grd} esta com {qtd} OS aguardando")) value.settings.grdEmailBodyMarllon = defaultData.settings.grdEmailBodyMarllon;
+  if (String(value.settings.grdEmailBodyJeferson || "").startsWith("Ola Jeferson,\n\nO GRD {grd} esta com {qtd} OS aguardando")) value.settings.grdEmailBodyJeferson = defaultData.settings.grdEmailBodyJeferson;
   value.settings.navItems = mergeNavItems(value.settings.navItems || []);
   value.settings.roleAccess = normalizeRoleAccess(value.settings.roleAccess || {});
   value.settings.themeMode = value.settings.themeMode || defaultData.settings.themeMode;
@@ -1142,6 +1144,7 @@ function renderGrdHomeDashboard() {
       ])}
       ${barChart("Prazos", grdDeadlineRowsV2(rows))}
       ${barChart("Por tipo de ensaio", grdTypeRows(rows))}
+      ${barChart("Tempo por etapa", grdStageTimeRows(rows))}
     </section>
     ${renderGrdLocationRadar(rows.slice(0, 12))}
   `;
@@ -1562,6 +1565,57 @@ function grdTypeRows(rows) {
   return list.length ? list.map(([label, value], index) => [label, value, ["green", "blue", "yellow", "red", "gray", "green"][index], max]) : [["Sem dados", 0, "gray", 1]];
 }
 
+function grdStageTimeRows(rows) {
+  const list = grdStageTotals(rows);
+  const max = Math.max(...list.map((row) => row.days), 1);
+  return list.length ? list.map((row, index) => [row.label, row.days, ["blue", "yellow", "green", "gray", "red"][index], max]) : [["Sem dados", 0, "gray", 1]];
+}
+
+function grdStageTotals(rows) {
+  const stages = [
+    ["michele", "Michele"],
+    ["marllon", "Marllon"],
+    ["jeferson", "Jeferson"],
+    ["digitalizacao", "Digitalizacao"],
+    ["arquivo", "Arquivo"]
+  ];
+  return stages.map(([key, label]) => {
+    const values = rows.map(({ grd, entry }) => stageDays(key, grd, entry)).filter((value) => value !== null);
+    const avg = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+    return { key, label, days: Number(avg.toFixed(1)), count: values.length };
+  }).filter((row) => row.count);
+}
+
+function stageDays(stage, grd, entry) {
+  const now = new Date().toISOString();
+  const created = entry.createdAt || grd.createdAt || grd.receivedDate || "";
+  const scanStart = entry.jefersonReturnedAt || "";
+  const archiveStart = entry.scannedAt || "";
+  const pairs = {
+    michele: [created, entry.marllonDeliveredAt || (entry.status === "with_michele" ? now : "")],
+    marllon: [entry.marllonDeliveredAt, entry.marllonReturnedAt || (["awaiting_marllon_receipt", "with_marllon"].includes(entry.status) ? now : "")],
+    jeferson: [entry.jefersonDeliveredAt, entry.jefersonReturnedAt || (["awaiting_jeferson_receipt", "with_jeferson"].includes(entry.status) ? now : "")],
+    digitalizacao: [scanStart, entry.scannedAt || (entry.status === "validated_jeferson" ? now : "")],
+    arquivo: [archiveStart, entry.archivedAt || (entry.status === "scanned" ? now : "")]
+  };
+  const [start, end] = pairs[stage] || [];
+  return diffDays(start, end);
+}
+
+function diffDays(start, end) {
+  if (!start || !end) return null;
+  const startDate = new Date(String(start).length <= 10 ? `${start}T00:00:00` : start);
+  const endDate = new Date(String(end).length <= 10 ? `${end}T00:00:00` : end);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return null;
+  return Math.max(0, (endDate - startDate) / 86400000);
+}
+
+function formatStageDuration(days) {
+  const value = Number(days || 0);
+  if (value < 1) return `${Math.round(value * 24)}h`;
+  return value % 1 === 0 ? String(value) : value.toFixed(1);
+}
+
 function grdTestOptions() {
   return [
     "Caracterizacao",
@@ -1881,7 +1935,7 @@ function renderGrdViewer() {
       </div>
     </div>
     ${renderGrdOsWorkPanel(item)}
-    <div class="grd-print-wrap">
+    <div class="grd-print-wrap no-screen-preview">
       ${pages.map((pageEntries, pageIndex) => renderGrdA4Page(item, pageEntries, pageIndex + 1, pages.length)).join("")}
     </div>
   `;
@@ -1936,6 +1990,7 @@ function renderGrdOsWorkPanel(item) {
         <h3>Historico do GRD</h3>
         ${renderGrdHistory(item)}
       </div>
+      ${renderGrdStageTimePanel(item)}
     </section>
   `;
 }
@@ -1968,7 +2023,27 @@ function renderGrdHistory(item) {
     : `<p class="muted">Nenhum historico registrado ainda.</p>`;
 }
 
+function renderGrdStageTimePanel(item) {
+  const rows = grdStageTotals(normalizeGrdEntries(item).map((entry) => ({ grd: item, entry })));
+  return `
+    <div class="grd-history-panel">
+      <h3>Tempo por etapa</h3>
+      <div class="stage-time-grid">
+        ${rows.map((row) => `
+          <div class="stage-time-card">
+            <strong>${esc(row.label)}</strong>
+            <span>${formatStageDuration(row.days)} dia(s)</span>
+            <small>${row.count} OS considerada(s)</small>
+          </div>
+        `).join("") || `<p class="muted">Ainda sem datas suficientes para calcular.</p>`}
+      </div>
+    </div>
+  `;
+}
+
 function renderGrdA4Page(item, entries, pageNumber, totalPages) {
+  const returnDate = grdReturnDate(item);
+  const signature = grdJefersonSignature(item);
   return `
     <section class="grd-a4">
       <header class="grd-a4-header">
@@ -1979,7 +2054,7 @@ function renderGrdA4Page(item, entries, pageNumber, totalPages) {
       <div class="grd-a4-meta">
         <strong>Pagina: ${pageNumber}/${totalPages}</strong>
         <span><b>Data envio</b>${formatDate(item.sentDate)}</span>
-        <span><b>Data devolucao</b>${formatDate(item.returnedDate) || "__/__/__"}</span>
+        <span><b>Data devolucao</b>${formatDate(returnDate) || "__/__/__"}</span>
       </div>
       <table class="grd-a4-table">
         <thead>
@@ -2006,10 +2081,24 @@ function renderGrdA4Page(item, entries, pageNumber, totalPages) {
       <div class="grd-sign-title">ASSINATURA CONTRATADA:</div>
       <footer class="grd-signatures">
         <div><span></span><strong>ERG ENGENHARIA LTDA</strong></div>
-        <div><span></span><strong>FISCALIZACAO DA OBRA (ITACTEBEL / VALE)</strong><small>(Assinar e Carimbar)</small></div>
+        <div>
+          ${signature ? `<div class="electronic-signature"><strong>Assinado eletronicamente por Jeferson</strong><small>${esc(signature)}</small><small>Validacao registrada no Facilita</small></div>` : `<span></span>`}
+          <strong>FISCALIZACAO DA OBRA (TRACTEBEL / VALE)</strong><small>(Assinar e Carimbar)</small>
+        </div>
       </footer>
     </section>
   `;
+}
+
+function grdReturnDate(item) {
+  const entries = normalizeGrdEntries(item);
+  const dates = entries.map((entry) => entry.jefersonReturnedAt).filter(Boolean).sort();
+  return item.returnedDate || dates[dates.length - 1] || "";
+}
+
+function grdJefersonSignature(item) {
+  const date = grdReturnDate(item);
+  return date ? `Assinado em ${formatDateTime(date)}` : "";
 }
 
 function renderGrdA4Logo(value, fallback, extraClass = "") {
@@ -3339,7 +3428,7 @@ function saveGrd(fd) {
     deliveredBy: initialCourier,
     history: [historyLine(isRetroactive ? `OS lancada retroativa por ${initialCourier}` : `OS recebida/lancada por ${initialCourier}`)]
   }));
-  data.grds.push({
+  const createdGrd = {
     id: uid(),
     company: firstEntry.company,
     testType: firstEntry.testType,
@@ -3362,11 +3451,13 @@ function saveGrd(fd) {
     initialCourier,
     retroactive: isRetroactive,
     history: [historyLine(isRetroactive ? `GRD retroativo lancado por ${initialCourier} sem necessidade de aprovacao` : `GRD lancado por ${initialCourier} e enviado para assinatura de Michele`)]
-  });
+  };
+  data.grds.push(createdGrd);
   saveData();
   currentView = "grdDashboard";
   showToast(isRetroactive ? "GRD retroativo lancado. Pronto para digitalizar." : "GRD lancado e enviado para Michele assinar.");
   render();
+  setTimeout(() => sendGrdEmail(createdGrd.id, "marllon"), 400);
 }
 
 function readGrdEntryRows() {
@@ -3647,9 +3738,10 @@ function fillGrdEmailTemplate(template, item, target) {
     data: formatDate(item.sentDate || item.receivedDate || new Date().toISOString().slice(0, 10)),
     responsavel: target,
     empresas: [...new Set(entries.map((entry) => entry.company || item.company).filter(Boolean))].join(", "),
-    os: entries.map((entry) => entry.os).filter(Boolean).join(", ")
+    os: entries.map((entry) => entry.os).filter(Boolean).join(", "),
+    link: `${location.origin}${location.pathname}?v=grd-checkup-tempos-20260714`
   };
-  return String(template || "").replace(/\{(grd|qtd|data|responsavel|empresas|os)\}/g, (_, key) => values[key] ?? "");
+  return String(template || "").replace(/\{(grd|qtd|data|responsavel|empresas|os|link)\}/g, (_, key) => values[key] ?? "");
 }
 
 function pickupGrdFromDesk(id, person) {
@@ -3675,6 +3767,7 @@ function pickupGrdFromDesk(id, person) {
     if (person === "jeferson" && entry.status === "with_jeferson") {
       entry.status = "validated_jeferson";
       entry.jefersonReturnedAt = now;
+      item.returnedDate = now.slice(0, 10);
     } else if (person === "marllon" && entry.status === "with_marllon") {
       entry.status = "validated_marllon";
       entry.marllonReturnedAt = now;
@@ -3759,6 +3852,7 @@ function validateSelectedGrdOs(id, person, user) {
     entry.pendingReason = "";
     if (person === "jeferson") entry.jefersonReturnedAt = now;
     else entry.marllonReturnedAt = now;
+    if (person === "jeferson") item.returnedDate = now.slice(0, 10);
     entry.history = entry.history || [];
     entry.history.push(historyLine(`${entry.os} validada por ${user.name} e buscada por ${pickedUpBy}`));
   });
