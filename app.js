@@ -427,6 +427,8 @@ function canSee(view, user) {
 
 function setCssVars() {
   const dark = data.settings.themeMode === "dark";
+  document.documentElement.classList.toggle("dark", dark);
+  document.body?.classList.toggle("dark", dark);
   document.documentElement.style.setProperty("--primary", data.settings.primary || "#0057b8");
   document.documentElement.style.setProperty("--secondary", data.settings.secondary || "#00a676");
   document.documentElement.style.setProperty("--bg", dark ? "#111827" : data.settings.bgColor || "#f5f7fb");
