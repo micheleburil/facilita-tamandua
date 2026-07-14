@@ -1113,6 +1113,7 @@ function renderGrdManager() {
 
 function renderGrdHomeDashboard() {
   const rows = grdEntries();
+  const actionRows = grdActionRowsForUser(currentUser(), rows);
   const holderCount = (holder) => rows.filter(({ entry }) => normalizeText(entry.currentHolder) === normalizeText(holder)).length;
   const pending = rows.filter(({ entry }) => String(entry.status).startsWith("pending")).length;
   const waitingScan = rows.filter(({ entry }) => entry.status === "validated_jeferson").length;
@@ -1147,7 +1148,7 @@ function renderGrdHomeDashboard() {
       ${barChart("Por tipo de ensaio", grdTypeRows(rows))}
       ${barChart("Tempo por etapa", grdStageTimeRows(rows))}
     </section>
-    ${renderGrdLocationRadar(rows.slice(0, 12))}
+    ${renderGrdLocationRadar(actionRows)}
   `;
 }
 
@@ -1155,7 +1156,7 @@ function renderGrdLocationRadar(rows) {
   return `
     <section class="card grd-location-radar">
       <div class="section-title">
-        <div><h3>${esc(pageText("locationTitle"))}</h3><span class="muted">${esc(pageText("locationSubtitle"))}</span></div>
+        <div><h3>${esc(pageText("locationTitle"))}</h3><span class="muted">OS aguardando movimentacao do usuario logado.</span></div>
         <button class="btn" data-action="openView" data-view="grdDashboard">${esc(pageText("locationButton"))}</button>
       </div>
       <div class="location-list">
@@ -1166,10 +1167,23 @@ function renderGrdLocationRadar(rows) {
             <em>${esc(entry.currentHolder || "-")}</em>
             ${grdEntryBadge(entry.status)}
           </button>
-        `).join("") || `<p class="muted">Nenhuma OS no fluxo ainda.</p>`}
+        `).join("") || `<p class="muted">Nenhuma OS aguardando sua acao agora. Para localizar qualquer OS, use GRD > Filtros e busca.</p>`}
       </div>
     </section>
   `;
+}
+
+function grdActionRowsForUser(user, rows = grdEntries()) {
+  const role = user?.role || "";
+  const actionStatus = {
+    admin: ["with_michele", "validated_marllon", "validated_jeferson", "scanned", "pending_marllon", "pending_jeferson"],
+    marllon: ["awaiting_marllon_receipt", "with_marllon"],
+    jeferson: ["awaiting_jeferson_receipt", "with_jeferson"],
+    viewer: []
+  }[role] || [];
+  return rows
+    .filter(({ entry }) => actionStatus.includes(entry.status))
+    .slice(0, 12);
 }
 
 function renderMicheleAccess() {
@@ -1950,6 +1964,8 @@ function renderGrdOsWorkPanel(item) {
   const canJeferson = role === "jeferson";
   const hasToScan = entries.some((entry) => entry.status === "validated_jeferson");
   const hasToArchive = entries.some((entry) => entry.status === "scanned");
+  const marllonCanValidate = canMarllon && entries.some((entry) => entry.status === "with_marllon");
+  const jefersonCanValidate = canJeferson && entries.some((entry) => entry.status === "with_jeferson");
   return `
     <section class="card grd-os-panel">
       <div class="section-title">
@@ -1982,8 +1998,8 @@ function renderGrdOsWorkPanel(item) {
         ${canAdmin && entries.some((entry) => entry.status === "validated_marllon") ? `<button class="btn" data-action="sendGrdEmail" data-id="${item.id}" data-person="jeferson">Disparar e-mail Jeferson</button>` : ""}
         ${canMarllon && entries.some((entry) => entry.status === "awaiting_marllon_receipt") ? `<button class="btn success" data-action="confirmGrdReceipt" data-id="${item.id}" data-person="marllon">Confirmo recebimento de todas</button>` : ""}
         ${canJeferson && entries.some((entry) => entry.status === "awaiting_jeferson_receipt") ? `<button class="btn success" data-action="confirmGrdReceipt" data-id="${item.id}" data-person="jeferson">Confirmo recebimento de todas</button>` : ""}
-        ${role === "marllon" ? `<button class="btn success" data-action="validateSelectedGrdOs" data-id="${item.id}" data-person="marllon">Validar selecionadas</button><button class="btn danger" data-action="pendSelectedGrdOs" data-id="${item.id}" data-person="marllon">Pendencia selecionadas</button>` : ""}
-        ${role === "jeferson" ? `<button class="btn success" data-action="validateSelectedGrdOs" data-id="${item.id}" data-person="jeferson">Validar selecionadas</button><button class="btn danger" data-action="pendSelectedGrdOs" data-id="${item.id}" data-person="jeferson">Pendencia selecionadas</button>` : ""}
+        ${marllonCanValidate ? `<button class="btn success" data-action="validateSelectedGrdOs" data-id="${item.id}" data-person="marllon">Validar selecionadas</button><button class="btn danger" data-action="pendSelectedGrdOs" data-id="${item.id}" data-person="marllon">Pendencia selecionadas</button>` : ""}
+        ${jefersonCanValidate ? `<button class="btn success" data-action="validateSelectedGrdOs" data-id="${item.id}" data-person="jeferson">Validar selecionadas</button><button class="btn danger" data-action="pendSelectedGrdOs" data-id="${item.id}" data-person="jeferson">Pendencia selecionadas</button>` : ""}
         ${role === "admin" && hasToScan ? `<button class="btn" data-action="scanSelectedGrdOs" data-id="${item.id}">Marcar digitalizadas</button>` : ""}
         ${role === "admin" && hasToArchive ? `<button class="btn success" data-action="archiveSelectedGrdOs" data-id="${item.id}">Arquivar/concluir selecionadas</button>` : ""}
       </div>
@@ -2044,7 +2060,7 @@ function renderGrdStageTimePanel(item) {
 
 function renderGrdA4Page(item, entries, pageNumber, totalPages) {
   const returnDate = grdReturnDate(item);
-  const signature = grdJefersonSignature(item);
+  const signatures = grdElectronicSignatures(item);
   return `
     <section class="grd-a4">
       <header class="grd-a4-header">
@@ -2081,9 +2097,12 @@ function renderGrdA4Page(item, entries, pageNumber, totalPages) {
       <p class="grd-confirm">Confirmo que recebi os ensaios mencionados acima.</p>
       <div class="grd-sign-title">ASSINATURA CONTRATADA:</div>
       <footer class="grd-signatures">
-        <div><span></span><strong>ERG ENGENHARIA LTDA</strong></div>
         <div>
-          ${signature ? `<div class="electronic-signature"><strong>Assinado eletronicamente por Jeferson</strong><small>${esc(signature)}</small><small>Validacao registrada no Facilita</small></div>` : `<span></span>`}
+          ${signatures.marllon ? `<div class="electronic-signature"><strong>Assinado eletronicamente por Marllon</strong><small>${esc(signatures.marllon)}</small><small>Validacao registrada no Facilita</small></div>` : `<span></span>`}
+          <strong>ERG ENGENHARIA LTDA</strong>
+        </div>
+        <div>
+          ${signatures.jeferson ? `<div class="electronic-signature"><strong>Assinado eletronicamente por Jeferson</strong><small>${esc(signatures.jeferson)}</small><small>Validacao registrada no Facilita</small></div>` : `<span></span>`}
           <strong>FISCALIZACAO DA OBRA (TRACTEBEL / VALE)</strong><small>(Assinar e Carimbar)</small>
         </div>
       </footer>
@@ -2097,9 +2116,14 @@ function grdReturnDate(item) {
   return item.returnedDate || dates[dates.length - 1] || "";
 }
 
-function grdJefersonSignature(item) {
-  const date = grdReturnDate(item);
-  return date ? `Assinado em ${formatDateTime(date)}` : "";
+function grdElectronicSignatures(item) {
+  const entries = normalizeGrdEntries(item);
+  const marllonDates = entries.map((entry) => entry.marllonReturnedAt).filter(Boolean).sort();
+  const jefersonDates = entries.map((entry) => entry.jefersonReturnedAt).filter(Boolean).sort();
+  return {
+    marllon: marllonDates.length ? `Assinado em ${formatDateTime(marllonDates[marllonDates.length - 1])}` : "",
+    jeferson: jefersonDates.length ? `Assinado em ${formatDateTime(jefersonDates[jefersonDates.length - 1])}` : ""
+  };
 }
 
 function renderGrdA4Logo(value, fallback, extraClass = "") {
