@@ -1052,6 +1052,10 @@ th {
   overflow: hidden;
 }
 
+.no-screen-preview {
+  display: none;
+}
+
 .grd-a4 {
   width: min(210mm, 100%);
   min-height: auto;
@@ -1218,14 +1222,14 @@ th {
   border-top: 0;
 }
 
-.grd-signatures div {
+.grd-signatures > div {
   display: grid;
   align-content: end;
   justify-items: center;
   padding: 12px;
 }
 
-.grd-signatures div + div {
+.grd-signatures > div + div {
   border-left: 1px solid #000;
 }
 
@@ -1238,6 +1242,22 @@ th {
 .grd-signatures small {
   display: block;
   font-size: 8px;
+}
+
+.electronic-signature {
+  border: 1px solid #222;
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin-bottom: 10px;
+  text-align: left;
+  width: 86%;
+  background: #f7f7f7;
+}
+
+.electronic-signature strong {
+  display: block;
+  font-size: 9px;
+  color: #000;
 }
 
 @media (max-width: 980px) {
@@ -1699,6 +1719,10 @@ th {
   }
 
   .grd-print-wrap {
+    display: block;
+  }
+
+  .no-screen-preview {
     display: block;
   }
 
