@@ -483,6 +483,11 @@ function renderLogin() {
           </div>
           <button class="btn primary" type="submit">Entrar</button>
         </form>
+        <div class="login-help">
+          <strong>Não consegui acessar</strong>
+          <p>Se o e-mail ou a senha foram alterados e você perdeu o acesso, restaure o acesso administrativo da Michele.</p>
+          <button class="btn" type="button" id="recoverAdminBtn">Restaurar acesso Michele</button>
+        </div>
       </section>
     </main>
   `;
@@ -499,6 +504,26 @@ function renderLogin() {
     saveData();
     render();
   });
+  document.getElementById("recoverAdminBtn").addEventListener("click", () => {
+    if (!confirm("Restaurar o acesso da Michele para michele@empresa.com com senha 123456?")) return;
+    recoverAdminAccess();
+  });
+}
+
+function recoverAdminAccess() {
+  let admin = data.users.find((user) => user.role === "admin");
+  if (!admin) {
+    admin = { id: uid(), role: "admin", active: true };
+    data.users.unshift(admin);
+  }
+  admin.name = admin.name || "Michele Buril";
+  admin.email = "michele@empresa.com";
+  admin.password = "123456";
+  admin.active = true;
+  data.sessionEmail = admin.email;
+  saveData();
+  showToast("Acesso da Michele restaurado.");
+  render();
 }
 
 function renderApp(user) {
@@ -1393,9 +1418,9 @@ function renderGrdForm() {
 function grdOsInputRow(index, entry = {}) {
   return `
     <div class="grd-os-input-row" data-grd-os-row>
-      <div class="field"><label>OS</label><input name="entryOs" value="${esc(entry.os || "")}" placeholder="OS 02" required></div>
+      <div class="field"><label>Número da OS</label><input name="entryOs" value="${esc(stripOsPrefix(entry.os || ""))}" placeholder="02" required></div>
       <div class="field"><label>Data do ensaio</label><input name="entryTestDate" type="date" value="${esc(entry.testDate || "")}"></div>
-      <div class="field"><label>Empresa</label><input name="entryCompany" value="${esc(entry.company || "")}" placeholder="FIE, Salum, Fidens..." required></div>
+      <div class="field"><label>Empresa</label><select name="entryCompany" required>${grdCompanyOptions(entry.company)}</select></div>
       <div class="field"><label>Protocolo</label><input name="entryProtocol" value="${esc(entry.protocol || "")}" placeholder="Opcional"></div>
       <div class="field">
         <label>Tipo de ensaio</label>
@@ -1406,6 +1431,25 @@ function grdOsInputRow(index, entry = {}) {
       <button class="btn danger" type="button" data-action="removeGrdOsRow">Remover</button>
     </div>
   `;
+}
+
+function stripOsPrefix(value) {
+  return String(value || "").replace(/^OS\s*/i, "").trim();
+}
+
+function normalizeOsInput(value, index = 0) {
+  const clean = stripOsPrefix(value);
+  return clean ? `OS ${clean}` : `OS ${index + 1}`;
+}
+
+function grdCompanyOptions(selected = "") {
+  const companies = ["FIDENS", "SALUM", "TRACTEBEL/VALE"];
+  const current = String(selected || "").trim();
+  const options = companies.map((name) => `<option value="${esc(name)}" ${normalizeText(current) === normalizeText(name) ? "selected" : ""}>${esc(name)}</option>`);
+  if (current && !companies.some((name) => normalizeText(name) === normalizeText(current))) {
+    options.unshift(`<option value="${esc(current)}" selected>${esc(current)}</option>`);
+  }
+  return `<option value="" ${current ? "" : "selected"}>Selecione</option>${options.join("")}`;
 }
 
 function renderModuleDashboard({ title, subtitle, cards, charts }) {
@@ -2747,8 +2791,16 @@ function renderSettings() {
           ${input("marllonEmail", "E-mail Marllon", s.marllonEmail, "", "email")}
           ${input("jefersonEmail", "E-mail Jeferson", s.jefersonEmail, "", "email")}
           ${input("grdEmailSubject", "Assunto do e-mail GRD", s.grdEmailSubject, "", "text")}
-          ${input("grdEmailBodyMarllon", "Corpo do e-mail para Marllon", s.grdEmailBodyMarllon, "", "textarea")}
-          ${input("grdEmailBodyJeferson", "Corpo do e-mail para Jeferson", s.grdEmailBodyJeferson, "", "textarea")}
+          <div class="field full email-template-field">
+            <label>Corpo do e-mail para Marllon</label>
+            <textarea name="grdEmailBodyMarllon" placeholder="Escreva o texto com as quebras de linha desejadas.">${esc(s.grdEmailBodyMarllon)}</textarea>
+            <span class="field-help">Pode dar Enter para separar frases e parágrafos. Campos disponíveis: {grd}, {qtd}, {empresas}, {os}, {link}.</span>
+          </div>
+          <div class="field full email-template-field">
+            <label>Corpo do e-mail para Jeferson</label>
+            <textarea name="grdEmailBodyJeferson" placeholder="Escreva o texto com as quebras de linha desejadas.">${esc(s.grdEmailBodyJeferson)}</textarea>
+            <span class="field-help">Pode dar Enter para separar frases e parágrafos. Campos disponíveis: {grd}, {qtd}, {empresas}, {os}, {link}.</span>
+          </div>
         </div>
       </section>
       <div class="settings-save"><button class="btn primary" type="submit">Salvar alteracoes</button></div>
@@ -3538,7 +3590,7 @@ function readGrdEntryRows() {
   if (rows.length) {
     return rows.map((row, index) => ({
       id: uid(),
-      os: row.querySelector('[name="entryOs"]')?.value.trim() || `OS ${index + 1}`,
+      os: normalizeOsInput(row.querySelector('[name="entryOs"]')?.value, index),
       testDate: row.querySelector('[name="entryTestDate"]')?.value.trim() || "",
       company: row.querySelector('[name="entryCompany"]')?.value.trim() || "Sem empresa",
       protocol: row.querySelector('[name="entryProtocol"]')?.value.trim() || "",
