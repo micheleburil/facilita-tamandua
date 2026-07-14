@@ -1719,11 +1719,11 @@ th {
   }
 
   .grd-print-wrap {
-    display: block;
+    display: block !important;
   }
 
   .no-screen-preview {
-    display: block;
+    display: block !important;
   }
 
   .grd-a4 {
