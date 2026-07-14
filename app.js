@@ -1,4 +1,12 @@
 const STORAGE_KEY = "facilita-he-data-v1";
+const SYNC_CHANNEL_NAME = "facilita-data-sync";
+const CLIENT_ID = Math.random().toString(36).slice(2);
+let syncChannel = null;
+try {
+  syncChannel = "BroadcastChannel" in window ? new BroadcastChannel(SYNC_CHANNEL_NAME) : null;
+} catch {
+  syncChannel = null;
+}
 
 const defaultData = {
   sessionEmail: "",
@@ -37,8 +45,9 @@ const defaultData = {
       { key: "reports", label: "Relatorios", order: 3, visible: true },
       { key: "approvals", label: "Aprovacoes", order: 4, visible: true },
       { key: "micheleAccess", label: "Acessos Michele", order: 5, visible: true },
-      { key: "settings", label: "Configuracoes", order: 6, visible: true },
-      { key: "about", label: "Sobre", order: 7, visible: true },
+      { key: "users", label: "Usuarios", order: 6, visible: true },
+      { key: "settings", label: "Configuracoes", order: 7, visible: true },
+      { key: "about", label: "Sobre", order: 8, visible: true },
       { key: "heDashboard", label: "HE", order: 8, visible: false },
       { key: "waterDashboard", label: "Agua", order: 9, visible: false },
       { key: "schedules", label: "Programacoes", order: 10, visible: false }
@@ -215,9 +224,25 @@ function mergeData(base, saved) {
   };
 }
 
-function saveData() {
+function saveData(options = {}) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  if (options.silent !== true) {
+    syncChannel?.postMessage({ type: "dataUpdated", sender: CLIENT_ID, at: Date.now() });
+  }
 }
+
+function reloadSharedData() {
+  data = loadData();
+  render();
+}
+
+window.addEventListener("storage", (event) => {
+  if (event.key === STORAGE_KEY) reloadSharedData();
+});
+
+syncChannel?.addEventListener("message", (event) => {
+  if (event.data?.type === "dataUpdated" && event.data.sender !== CLIENT_ID) reloadSharedData();
+});
 
 function normalizeData(value) {
   value = repairStoredText(value);
@@ -486,16 +511,21 @@ function renderLogin() {
         <div class="login-help">
           <strong>Não consegui acessar</strong>
           <p>Se o e-mail ou a senha foram alterados e você perdeu o acesso, restaure o acesso administrativo da Michele.</p>
-          <button class="btn" type="button" id="recoverAdminBtn">Restaurar acesso Michele</button>
+          <select id="recoverUserSelect">
+            ${data.users.map((user) => `<option value="${user.id}">${esc(user.name)} - ${esc(user.email)}</option>`).join("")}
+          </select>
+          <button class="btn" type="button" id="recoverAdminBtn">Restaurar senha do usuario</button>
         </div>
       </section>
     </main>
   `;
+  const recoverCopy = document.querySelector(".login-help p");
+  if (recoverCopy) recoverCopy.textContent = "Escolha o usuario e restaure a senha para 123456. O e-mail cadastrado sera mantido.";
   document.getElementById("loginForm").addEventListener("submit", (event) => {
     event.preventDefault();
     const email = document.getElementById("email").value.trim();
     const password = document.getElementById("password").value;
-    const found = data.users.find((u) => u.email === email && u.password === password && u.active);
+    const found = data.users.find((u) => normalizeText(u.email) === normalizeText(email) && String(u.password || "") === String(password || "") && u.active);
     if (!found) {
       showToast("Login ou senha invalidos.");
       return;
@@ -505,24 +535,22 @@ function renderLogin() {
     render();
   });
   document.getElementById("recoverAdminBtn").addEventListener("click", () => {
-    if (!confirm("Restaurar o acesso da Michele para michele@empresa.com com senha 123456?")) return;
-    recoverAdminAccess();
+    const selectedId = document.getElementById("recoverUserSelect")?.value;
+    const selected = data.users.find((user) => user.id === selectedId);
+    if (!selected) return;
+    if (!confirm(`Restaurar a senha de ${selected.name} para 123456?`)) return;
+    recoverUserAccess(selected.id);
   });
 }
 
-function recoverAdminAccess() {
-  let admin = data.users.find((user) => user.role === "admin");
-  if (!admin) {
-    admin = { id: uid(), role: "admin", active: true };
-    data.users.unshift(admin);
-  }
-  admin.name = admin.name || "Michele Buril";
-  admin.email = "michele@empresa.com";
-  admin.password = "123456";
-  admin.active = true;
-  data.sessionEmail = admin.email;
+function recoverUserAccess(id) {
+  const user = data.users.find((entry) => entry.id === id) || data.users.find((entry) => entry.role === "admin");
+  if (!user) return;
+  user.password = "123456";
+  user.active = true;
+  data.sessionEmail = user.email;
   saveData();
-  showToast("Acesso da Michele restaurado.");
+  showToast("Senha restaurada para 123456.");
   render();
 }
 
@@ -2598,8 +2626,17 @@ function renderUsers() {
   return `
     <div class="page-head"><div><h1>Usuarios</h1><p>Controle acessos, perfis e status.</p></div>${backButton("settings", "Voltar para Configuracoes")}</div>
     <section class="card">
+      <div class="notice-box">
+        <strong>Como criar acesso</strong>
+        <span>Cadastre uma pessoa por vez. O e-mail informado sera usado no login e a senha inicial pode ser alterada depois pelo proprio usuario em Configuracoes.</span>
+      </div>
+      <div class="notice-box sync-box">
+        <strong>Sincronizacao</strong>
+        <span>As alteracoes atualizam automaticamente outras abas e o app instalado no mesmo Chrome. Para varios computadores ou celulares, sera necessario conectar uma base online gratuita.</span>
+      </div>
       <form class="form-grid" data-form="user">
-        <div class="field"><label>Nome</label><input name="name" required></div>
+        <div class="field"><label>Nome</label><input name="name" list="userNameSuggestions" required></div>
+        <datalist id="userNameSuggestions">${employeeDefaults().map((employee) => `<option value="${esc(employee.name)}"></option>`).join("")}</datalist>
         <div class="field"><label>E-mail</label><input name="email" type="email" required></div>
         <div class="field"><label>Senha</label><input name="password" value="123456" required></div>
         <div class="field"><label>Perfil</label><select name="role"><option value="viewer">Somente visualizar</option><option value="admin">Administradora</option><option value="marllon">Aprovador Marllon</option><option value="jeferson">Aprovador Jeferson</option></select></div>
