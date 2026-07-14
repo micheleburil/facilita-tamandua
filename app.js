@@ -100,6 +100,26 @@ const defaultData = {
       deadlineNear: "Atencao",
       deadlineLate: "Vencidas"
     },
+    pageTexts: {
+      dashboardTitle: "Inicio",
+      dashboardSubtitle: "Farol geral do GRD por OS, responsavel, prazo e tipo de ensaio.",
+      grdTitle: "GRD",
+      grdSubtitle: "Fluxo por OS: recebimento, validacao, assinatura, digitalizacao, arquivo e gargalos.",
+      reportsTitle: "Relatorios GRD",
+      reportsSubtitle: "Resumo e listagem das OS filtradas no GRD.",
+      approvalsTitle: "Aprovacoes GRD",
+      approvalsSubtitle: "OS aguardando recebimento, validacao ou assinatura.",
+      settingsTitle: "Configuracoes",
+      settingsSubtitle: "Personalize as informacoes e aparencia do app.",
+      aboutTitle: "Sobre",
+      aboutSubtitle: "Informacoes gerais do sistema.",
+      locationTitle: "Onde esta cada ensaio",
+      locationSubtitle: "Ultimas OS movimentadas, responsavel atual e etapa do fluxo.",
+      locationButton: "Pesquisar OS",
+      recordsTitle: "Registros por OS",
+      recordsSubtitle: "Busca OS, protocolo, tipo de ensaio, responsavel e gargalo",
+      filtersTitle: "Filtros e busca"
+    },
     recentTitle: "Farol recente",
     recentVisible: true,
     recentPosition: "after",
@@ -212,6 +232,7 @@ function normalizeData(value) {
   value.settings.dashboardCards = mergeConfigRows(defaultData.settings.dashboardCards, value.settings.dashboardCards || []);
   value.settings.homeSummaryCards = mergeConfigRows(defaultData.settings.homeSummaryCards, value.settings.homeSummaryCards || []);
   value.settings.grdFarolLabels = { ...defaultData.settings.grdFarolLabels, ...(value.settings.grdFarolLabels || {}) };
+  value.settings.pageTexts = { ...defaultData.settings.pageTexts, ...(value.settings.pageTexts || {}) };
   value.settings.navItems = mergeNavItems(value.settings.navItems || []);
   value.settings.roleAccess = normalizeRoleAccess(value.settings.roleAccess || {});
   value.settings.themeMode = value.settings.themeMode || defaultData.settings.themeMode;
@@ -230,6 +251,13 @@ function normalizeData(value) {
       active: current.active !== false
     };
   });
+  value.users = (value.users || []).map((user) => ({
+    ...user,
+    photo: user.photo || "",
+    functionName: user.functionName || roleLabel(user.role),
+    company: user.company || value.settings.contractor || "",
+    phone: user.phone || ""
+  }));
   return value;
 }
 
@@ -481,12 +509,12 @@ function renderApp(user) {
           ${views.map(([key, label]) => `<button class="${currentView === key ? "active" : ""}" data-view="${key}">${esc(label)}</button>`).join("")}
         </nav>
         <div class="user-box">
-          <span class="avatar">${initials(user.name)}</span>
+          ${userAvatar(user)}
           <div><strong>${esc(user.name)}</strong><br><small>${roleLabel(user.role)}</small><br><button class="link-btn" id="logoutBtn">Sair</button></div>
         </div>
       </aside>
       <section class="main">
-        <header class="top-actions"><button class="icon-btn" title="Tema">${renderIcon(data.settings.topActionIcon1 || "☼")}</button><span class="top-avatar">${initials(user.name)}</span><span class="top-caret">⌄</span></header>
+        <header class="top-actions"><button class="icon-btn" title="Tema">${renderIcon(data.settings.topActionIcon1 || "☼")}</button>${userAvatar(user, "top-avatar")}<span class="top-caret">⌄</span></header>
         <div class="content" id="view"></div>
       </section>
     </main>
@@ -530,6 +558,15 @@ function initials(name) {
     .map((part) => part[0])
     .join("")
     .toUpperCase() || "U";
+}
+
+function userAvatar(user, className = "avatar") {
+  if (user?.photo) return `<span class="${className} avatar-photo"><img src="${esc(user.photo)}" alt=""></span>`;
+  return `<span class="${className}">${initials(user?.name)}</span>`;
+}
+
+function pageText(key) {
+  return data.settings.pageTexts?.[key] || defaultData.settings.pageTexts[key] || key;
 }
 
 function homeHeroVisual() {
@@ -582,6 +619,12 @@ function bindViewEvents(user) {
     form.addEventListener("submit", (event) => handleForm(event, form.dataset.form, user));
   });
   document.querySelectorAll("[data-auto]").forEach((el) => {
+    if (el.dataset.auto === "grdFilters" && el.tagName === "INPUT" && el.type === "text") {
+      el.addEventListener("input", () => {
+        clearTimeout(window.grdFilterTimer);
+        window.grdFilterTimer = setTimeout(() => applyGrdFilters(), 350);
+      });
+    }
     el.addEventListener("change", () => {
       if (el.dataset.auto === "report") render();
       if (el.dataset.auto === "reportFilter") {
@@ -632,6 +675,9 @@ function bindViewEvents(user) {
   });
   document.querySelectorAll("[data-file-setting]").forEach((el) => {
     el.addEventListener("change", () => handleSettingFile(el));
+  });
+  document.querySelectorAll("[data-profile-photo]").forEach((el) => {
+    el.addEventListener("change", () => handleProfilePhoto(el));
   });
   document.querySelectorAll("[data-card-icon-file]").forEach((el) => {
     el.addEventListener("change", () => handleCardIconFile(el));
@@ -1066,7 +1112,7 @@ function renderGrdHomeDashboard() {
   const max = Math.max(rows.length, 1);
   return `
     <div class="page-head">
-      <div><h1>Inicio</h1><p>Farol geral do GRD por OS, responsavel, prazo e tipo de ensaio.</p></div>
+      <div><h1>${esc(pageText("dashboardTitle"))}</h1><p>${esc(pageText("dashboardSubtitle"))}</p></div>
       <div class="btn-row">
         ${currentUser().role === "admin" ? `<button class="btn primary" data-action="goNewGrd">+ Lancar GRD</button>` : ""}
         <button class="btn" data-action="openView" data-view="grdDashboard">Ver GRDs</button>
@@ -1100,8 +1146,8 @@ function renderGrdLocationRadar(rows) {
   return `
     <section class="card grd-location-radar">
       <div class="section-title">
-        <div><h3>Onde esta cada ensaio</h3><span class="muted">Ultimas OS movimentadas, responsavel atual e etapa do fluxo.</span></div>
-        <button class="btn" data-action="openView" data-view="grdDashboard">Pesquisar OS</button>
+        <div><h3>${esc(pageText("locationTitle"))}</h3><span class="muted">${esc(pageText("locationSubtitle"))}</span></div>
+        <button class="btn" data-action="openView" data-view="grdDashboard">${esc(pageText("locationButton"))}</button>
       </div>
       <div class="location-list">
         ${rows.map(({ grd, entry }) => `
@@ -1143,7 +1189,7 @@ function renderGrdManagerV2() {
   const max = Math.max(rows.length, 1);
   return `
     <div class="page-head">
-      <div><h1>GRD</h1><p>Fluxo por OS: recebimento, validacao, assinatura, digitalizacao, arquivo e gargalos.</p></div>
+      <div><h1>${esc(pageText("grdTitle"))}</h1><p>${esc(pageText("grdSubtitle"))}</p></div>
       <div class="btn-row">
         ${currentUser().role === "admin" ? `<button class="btn primary" data-action="goNewGrd">+ Lancar GRD</button><button class="btn" data-action="editLayout">Editar layout</button>` : ""}
       </div>
@@ -1173,7 +1219,7 @@ function renderGrdManagerV2() {
     </section>
     <section class="card" style="margin-top:16px">
       <div class="section-title">
-        <div><h3>Registros por OS</h3><span class="muted">Busca OS, protocolo, tipo de ensaio, responsavel e gargalo</span></div>
+        <div><h3>${esc(pageText("recordsTitle"))}</h3><span class="muted">${esc(pageText("recordsSubtitle"))}</span></div>
         ${currentUser().role === "admin" ? `<button class="btn primary" data-action="goNewGrd">Novo GRD</button>` : ""}
       </div>
       ${renderGrdQuickSearch()}
@@ -1213,7 +1259,7 @@ function renderGrdFilters(total, filtered) {
   return `
     <section class="card grd-filters">
       <div class="section-title">
-        <div><h3>Filtros e busca</h3><span class="muted">${filtered} de ${total} OS exibidas</span></div>
+        <div><h3>${esc(pageText("filtersTitle"))}</h3><span class="muted">${filtered} de ${total} OS exibidas</span></div>
         <div class="btn-row">
           <button class="btn primary" data-action="applyGrdFilters">Aplicar filtros</button>
           <button class="btn" data-action="resetGrdFilters">Limpar</button>
@@ -2029,7 +2075,7 @@ function renderApprovals(user) {
   });
   return `
     <div class="page-head">
-      <div><h1>Aprovacoes GRD</h1><p>OS aguardando recebimento, validacao ou assinatura.</p></div>
+      <div><h1>${esc(pageText("approvalsTitle"))}</h1><p>${esc(pageText("approvalsSubtitle"))}</p></div>
       ${backButton("dashboard", "Voltar")}
     </div>
     <section class="card">
@@ -2128,7 +2174,7 @@ function renderReports() {
   const waiting = rows.length - pending - done;
   return `
     <div class="page-head">
-      <div><h1>Relatorios GRD</h1><p>Resumo e listagem das OS filtradas no GRD.</p></div>
+      <div><h1>${esc(pageText("reportsTitle"))}</h1><p>${esc(pageText("reportsSubtitle"))}</p></div>
       ${backButton("dashboard", "Voltar")}
     </div>
     ${renderGrdFilters(grdEntries().length, rows.length)}
@@ -2176,12 +2222,14 @@ function renderUsers() {
         <div class="field"><label>E-mail</label><input name="email" type="email" required></div>
         <div class="field"><label>Senha</label><input name="password" value="123456" required></div>
         <div class="field"><label>Perfil</label><select name="role"><option value="viewer">Visualizador</option><option value="admin">Administradora</option><option value="marllon">Aprovador Marllon</option><option value="jeferson">Aprovador Jeferson</option></select></div>
+        <div class="field"><label>Funcao</label><input name="functionName" placeholder="Funcao do usuario"></div>
+        <div class="field"><label>Empresa</label><input name="company" value="${esc(data.settings.contractor || "")}"></div>
         <div class="field full"><button class="btn primary" type="submit">Cadastrar usuario</button></div>
       </form>
       <div class="table-wrap" style="margin-top:16px">
         <table>
-          <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Status</th><th>Acoes</th></tr></thead>
-          <tbody>${data.users.map((u) => `<tr><td>${esc(u.name)}</td><td>${esc(u.email)}</td><td>${roleLabel(u.role)}</td><td>${u.active ? "Ativo" : "Inativo"}</td><td><button class="btn" data-action="toggleUser" data-id="${u.id}">${u.active ? "Desativar" : "Ativar"}</button></td></tr>`).join("")}</tbody>
+          <thead><tr><th>Usuario</th><th>E-mail</th><th>Funcao</th><th>Empresa</th><th>Perfil</th><th>Status</th><th>Acoes</th></tr></thead>
+          <tbody>${data.users.map((u) => `<tr><td>${userAvatar(u)}<strong>${esc(u.name)}</strong></td><td>${esc(u.email)}</td><td>${esc(u.functionName || "-")}</td><td>${esc(u.company || "-")}</td><td>${roleLabel(u.role)}</td><td>${u.active ? "Ativo" : "Inativo"}</td><td><button class="btn" data-action="toggleUser" data-id="${u.id}">${u.active ? "Desativar" : "Ativar"}</button></td></tr>`).join("")}</tbody>
         </table>
       </div>
     </section>
@@ -2196,7 +2244,7 @@ function renderSettings() {
   const pageClass = (id, extra = "") => `card settings-card settings-page ${extra} ${activeSection === id ? "" : "hidden-field"}`;
   return `
     <div class="settings-shell">
-      <div class="page-head settings-head"><div><h1>Configurações</h1><p>Personalize as informações e aparência do app.</p></div>${backButton("dashboard", "Voltar")}</div>
+      <div class="page-head settings-head"><div><h1>${esc(pageText("settingsTitle"))}</h1><p>${esc(pageText("settingsSubtitle"))}</p></div>${backButton("dashboard", "Voltar")}</div>
       <form class="grid settings-windows" data-form="settings">
         <div class="settings-tabs">
           ${tab("cfg-aparencia", "Aparencia e textos")}
@@ -2209,6 +2257,7 @@ function renderSettings() {
           ${tab("cfg-botoes-he", "Botoes HE")}
           ${tab("cfg-emails", "E-mails")}
         </div>
+        ${renderProfileSettings(currentUser())}
         <section class="${pageClass("cfg-aparencia", "settings-simple")}" id="cfg-aparencia">
           <div class="settings-section-head"><div><h3>Informações do app</h3><p class="muted">Edite os textos que aparecem no sistema.</p></div></div>
         <div class="form-grid">
@@ -2224,6 +2273,12 @@ function renderSettings() {
           ${input("appAdmin", "Administradora", s.appAdmin)}
           ${input("intro", "Texto inicial", s.intro, "full")}
           <div class="field full hidden-field">${input("homeDescription", "Descrição da tela inicial", s.homeDescription)}</div>
+        </div>
+        <div class="section-title" style="margin-top:24px">
+          <div><h3>Textos das telas</h3><p class="muted">Mude titulos, descricoes e chamadas dos principais blocos do app.</p></div>
+        </div>
+        <div class="form-grid">
+          ${renderPageTextFields(s)}
         </div>
         <div class="settings-save inline"><button class="btn primary" type="submit">Salvar alteracoes</button></div>
         </section>
@@ -2447,8 +2502,9 @@ function renderThemeSettings() {
   const mode = data.settings.themeMode || "light";
   return `
     <div class="settings-shell">
-      <div class="page-head settings-head"><div><h1>Configuracoes</h1><p>Escolha como prefere visualizar o app.</p></div>${backButton("dashboard", "Voltar")}</div>
+      <div class="page-head settings-head"><div><h1>${esc(pageText("settingsTitle"))}</h1><p>${esc(pageText("settingsSubtitle"))}</p></div>${backButton("dashboard", "Voltar")}</div>
       <form class="grid settings-windows" data-form="settings">
+        ${renderProfileSettings(currentUser())}
         <section class="card settings-card">
           <div class="section-title"><div><h3>Tema</h3><p class="muted">Esta configuracao fica liberada para todos os usuarios.</p></div></div>
           <div class="form-grid">
@@ -2490,6 +2546,30 @@ function fileSettingField(name, label, value, help = "") {
   `;
 }
 
+function renderProfileSettings(user = currentUser()) {
+  return `
+    <section class="card settings-card profile-card">
+      <div class="section-title"><div><h3>Meu cadastro</h3><p class="muted">Atualize seus dados, foto e senha de acesso.</p></div></div>
+      <div class="profile-settings-grid">
+        <div class="profile-photo-box">
+          ${userAvatar(user, "profile-avatar")}
+          <input type="hidden" name="profilePhoto" value="${esc(user.photo || "")}">
+          <input type="file" accept="image/*" data-profile-photo>
+          <span class="field-help">A foto aparece no seu usuario no app.</span>
+        </div>
+        <div class="form-grid">
+          <div class="field"><label>Nome</label><input name="profileName" value="${esc(user.name || "")}" required></div>
+          <div class="field"><label>E-mail</label><input name="profileEmail" type="email" value="${esc(user.email || "")}" required></div>
+          <div class="field"><label>Funcao</label><input name="profileFunction" value="${esc(user.functionName || "")}" placeholder="Ex.: Administradora, aprovador, laboratorista"></div>
+          <div class="field"><label>Empresa</label><input name="profileCompany" value="${esc(user.company || data.settings.contractor || "")}"></div>
+          <div class="field"><label>Telefone</label><input name="profilePhone" value="${esc(user.phone || "")}"></div>
+          <div class="field"><label>Nova senha</label><input name="profilePassword" type="password" value="${esc(user.password || "")}" required></div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 function handleSettingFile(inputEl) {
   const file = inputEl.files?.[0];
   if (!file) return;
@@ -2500,6 +2580,18 @@ function handleSettingFile(inputEl) {
     saveData();
     showToast("Imagem anexada.");
     render();
+  };
+  reader.readAsDataURL(file);
+}
+
+function handleProfilePhoto(inputEl) {
+  const file = inputEl.files?.[0];
+  if (!file) return;
+  const hidden = document.querySelector('[name="profilePhoto"]');
+  const reader = new FileReader();
+  reader.onload = () => {
+    if (hidden) hidden.value = reader.result;
+    showToast("Foto anexada. Clique em Salvar alteracoes.");
   };
   reader.readAsDataURL(file);
 }
@@ -2778,6 +2870,36 @@ function renderGrdFarolLabelFields(settings) {
   `).join("");
 }
 
+function renderPageTextFields(settings) {
+  const texts = { ...defaultData.settings.pageTexts, ...(settings.pageTexts || {}) };
+  const fields = [
+    ["dashboardTitle", "Titulo da tela Inicio"],
+    ["dashboardSubtitle", "Descricao da tela Inicio"],
+    ["grdTitle", "Titulo da tela GRD"],
+    ["grdSubtitle", "Descricao da tela GRD"],
+    ["recordsTitle", "Titulo dos registros"],
+    ["recordsSubtitle", "Descricao dos registros"],
+    ["filtersTitle", "Titulo dos filtros"],
+    ["locationTitle", "Titulo do bloco de localizacao"],
+    ["locationSubtitle", "Descricao do bloco de localizacao"],
+    ["locationButton", "Botao do bloco de localizacao"],
+    ["reportsTitle", "Titulo de Relatorios"],
+    ["reportsSubtitle", "Descricao de Relatorios"],
+    ["approvalsTitle", "Titulo de Aprovacoes"],
+    ["approvalsSubtitle", "Descricao de Aprovacoes"],
+    ["settingsTitle", "Titulo de Configuracoes"],
+    ["settingsSubtitle", "Descricao de Configuracoes"],
+    ["aboutTitle", "Titulo de Sobre"],
+    ["aboutSubtitle", "Descricao de Sobre"]
+  ];
+  return fields.map(([key, label]) => `
+    <div class="field">
+      <label>${label}</label>
+      <input data-page-text name="pageText_${esc(key)}" data-key="${esc(key)}" value="${esc(texts[key] || "")}">
+    </div>
+  `).join("");
+}
+
 function renderScheduleCardRows() {
   return (data.settings.scheduleCards || defaultData.settings.scheduleCards)
     .slice()
@@ -2913,7 +3035,7 @@ function dashboardColorOptions(selected) {
 
 function renderAbout() {
   return `
-    <div class="page-head"><div><h1>Sobre</h1><p>Informacoes gerais do sistema.</p></div>${backButton("dashboard", "Voltar")}</div>
+    <div class="page-head"><div><h1>${esc(pageText("aboutTitle"))}</h1><p>${esc(pageText("aboutSubtitle"))}</p></div>${backButton("dashboard", "Voltar")}</div>
     <section class="card">
       <div class="report-header">
         ${data.settings.showA4Logos === false ? "" : logoSlot(data.settings.logoErg || "ERG")}
@@ -3882,7 +4004,18 @@ function addUser(fd) {
     showToast("E-mail ja cadastrado.");
     return;
   }
-  data.users.push({ id: uid(), name: fd.get("name"), email, password: fd.get("password"), role: fd.get("role"), active: true });
+  data.users.push({
+    id: uid(),
+    name: fd.get("name"),
+    email,
+    password: fd.get("password"),
+    role: fd.get("role"),
+    functionName: fd.get("functionName") || roleLabel(fd.get("role")),
+    company: fd.get("company") || data.settings.contractor || "",
+    phone: "",
+    photo: "",
+    active: true
+  });
   saveData();
   showToast("Usuario cadastrado.");
   render();
@@ -3896,6 +4029,7 @@ function toggleUser(id) {
 }
 
 function saveSettings(fd) {
+  if (!saveProfileFromSettings(fd)) return;
   if (currentUser().role !== "admin") {
     data.settings.themeMode = fd.get("themeMode") || "light";
     saveData();
@@ -3988,6 +4122,10 @@ function saveSettings(fd) {
   document.querySelectorAll("[data-grd-farol-label]").forEach((input) => {
     data.settings.grdFarolLabels[input.dataset.key] = input.value.trim() || defaultData.settings.grdFarolLabels[input.dataset.key] || "";
   });
+  data.settings.pageTexts = { ...defaultData.settings.pageTexts };
+  document.querySelectorAll("[data-page-text]").forEach((input) => {
+    data.settings.pageTexts[input.dataset.key] = input.value.trim() || defaultData.settings.pageTexts[input.dataset.key] || "";
+  });
   data.settings.navItems = [...document.querySelectorAll("[data-nav-item-row]")].map((row, index) => ({
     key: row.dataset.key,
     order: Number(row.querySelector('[name="navOrder"]').value || index + 1),
@@ -4004,6 +4142,31 @@ function saveSettings(fd) {
   saveData();
   showToast("Configuracoes salvas.");
   render();
+}
+
+function saveProfileFromSettings(fd) {
+  if (!fd.has("profileName")) return true;
+  const user = currentUser();
+  if (!user) return false;
+  const nextEmail = String(fd.get("profileEmail") || "").trim();
+  if (!nextEmail) {
+    showToast("Informe o e-mail do cadastro.");
+    return false;
+  }
+  const duplicated = data.users.some((entry) => entry.id !== user.id && normalizeText(entry.email) === normalizeText(nextEmail));
+  if (duplicated) {
+    showToast("Este e-mail ja esta em uso por outro usuario.");
+    return false;
+  }
+  user.name = String(fd.get("profileName") || "").trim() || user.name;
+  user.email = nextEmail;
+  user.functionName = String(fd.get("profileFunction") || "").trim();
+  user.company = String(fd.get("profileCompany") || "").trim();
+  user.phone = String(fd.get("profilePhone") || "").trim();
+  user.photo = String(fd.get("profilePhoto") || user.photo || "");
+  user.password = String(fd.get("profilePassword") || "").trim() || user.password;
+  data.sessionEmail = user.email;
+  return true;
 }
 
 function addDashboardCard() {
