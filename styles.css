@@ -244,22 +244,26 @@ button {
 }
 
 .metric {
-  min-height: 78px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 14px;
+  min-height: 96px;
+  display: grid;
+  align-content: center;
+  gap: 6px;
   padding: 18px 22px;
+  border-left: 5px solid var(--primary);
 }
 
 .metric strong {
   display: block;
-  font-size: 24px;
-  margin-bottom: 5px;
+  font-size: 34px;
+  line-height: 1;
+  margin: 0;
+  color: var(--text);
 }
 
-.metric span {
+.metric .metric-label {
   color: var(--muted);
+  font-weight: 800;
+  line-height: 1.2;
 }
 
 .metric-icon {
@@ -320,6 +324,26 @@ button {
 .metric-gray {
   background: var(--track);
   color: var(--muted);
+}
+
+.metric-tone-green {
+  border-left-color: var(--success);
+}
+
+.metric-tone-yellow {
+  border-left-color: var(--warning);
+}
+
+.metric-tone-red {
+  border-left-color: var(--danger);
+}
+
+.metric-tone-blue {
+  border-left-color: var(--primary);
+}
+
+.metric-tone-gray {
+  border-left-color: var(--muted);
 }
 
 .home-hero {
@@ -616,11 +640,11 @@ table {
 
 th,
 td {
-  padding: 10px;
+  padding: 9px 8px;
   border-bottom: 1px solid var(--line);
   text-align: left;
   vertical-align: top;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   word-break: normal;
 }
 
@@ -840,21 +864,43 @@ th {
 
 .grd-list-table th:nth-child(5),
 .grd-list-table td:nth-child(5) {
-  width: 22%;
+  width: 20%;
 }
 
 .grd-list-table th:nth-child(6),
-.grd-list-table td:nth-child(6),
+.grd-list-table td:nth-child(6) {
+  width: 10%;
+}
+
 .grd-list-table th:nth-child(7),
-.grd-list-table td:nth-child(7),
+.grd-list-table td:nth-child(7) {
+  width: 10%;
+}
+
 .grd-list-table th:nth-child(8),
 .grd-list-table td:nth-child(8) {
-  width: 11%;
+  width: 10%;
 }
 
 .grd-list-table th:nth-child(9),
 .grd-list-table td:nth-child(9) {
-  width: 12%;
+  width: 14%;
+  min-width: 104px;
+}
+
+.table-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 7px;
+}
+
+.table-actions .btn,
+.grd-os-table .btn {
+  min-height: 32px;
+  width: 100%;
+  max-width: 112px;
+  padding: 0 10px;
+  white-space: nowrap;
 }
 
 .grd-work-table th:nth-child(1),
@@ -896,6 +942,68 @@ th {
 
 .grd-actions {
   margin-top: 14px;
+}
+
+.grd-location-radar {
+  margin-top: 16px;
+}
+
+.location-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.location-item {
+  min-height: 82px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 5px 10px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--text);
+  text-align: left;
+}
+
+.location-item strong {
+  font-size: 16px;
+}
+
+.location-item span {
+  color: var(--muted);
+}
+
+.location-item em {
+  font-style: normal;
+  font-weight: 800;
+  color: var(--primary);
+}
+
+.location-item .badge {
+  justify-self: end;
+}
+
+.quick-search {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 14px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.quick-search span {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  color: var(--primary);
 }
 
 .date-chip {
