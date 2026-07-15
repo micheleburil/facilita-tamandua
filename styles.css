@@ -1762,6 +1762,48 @@ th {
   font-weight: 900;
 }
 
+.user-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+}
+
+.user-menu {
+  position: absolute;
+  top: 58px;
+  right: 28px;
+  z-index: 20;
+  min-width: 190px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.user-menu button {
+  width: 100%;
+  min-height: 36px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+  padding: 0 10px;
+}
+
+.user-menu button:hover {
+  background: var(--nav-hover);
+  color: var(--primary);
+}
+
 @media print {
   @page {
     size: A4 portrait;
@@ -3103,6 +3145,50 @@ body.dark .btn.success,
 body.dark .btn.danger,
 .dark .btn.danger {
   color: #fff;
+}
+
+body.dark .chart-card h3,
+.dark .chart-card h3,
+body.dark .section-title h3,
+.dark .section-title h3,
+body.dark .metric strong,
+.dark .metric strong,
+body.dark .metric-value,
+.dark .metric-value,
+body.dark .metric-label,
+.dark .metric-label {
+  color: #f4f8ff;
+}
+
+body.dark .card,
+.dark .card,
+body.dark .metric,
+.dark .metric {
+  background: #172438;
+  border-color: #38506f;
+}
+
+body.dark .nav button.active,
+body.dark .nav button:hover,
+.dark .nav button.active,
+.dark .nav button:hover {
+  background: #e7f0ff;
+  color: #075ec5;
+}
+
+body.dark .muted,
+.dark .muted,
+body.dark .page-head p,
+.dark .page-head p,
+body.dark .field label,
+.dark .field label {
+  color: #b9c8dc;
+}
+
+body.dark .user-menu,
+.dark .user-menu {
+  background: #172438;
+  border-color: #38506f;
 }
 
 @media (max-width: 1180px) {
