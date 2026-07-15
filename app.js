@@ -682,11 +682,12 @@ function renderLogin() {
     saveData();
     render();
   });
-  document.getElementById("recoverAdminBtn").addEventListener("click", () => {
+  document.getElementById("recoverAdminBtn").addEventListener("click", async () => {
     const selectedId = document.getElementById("recoverUserSelect")?.value;
     const selected = data.users.find((user) => user.id === selectedId);
     if (!selected) return;
-    if (!confirm(`Restaurar a senha de ${selected.name} para 123456?`)) return;
+    const confirmed = await appConfirm("Restaurar senha", `Restaurar a senha de ${selected.name} para 123456?`, { okLabel: "Restaurar" });
+    if (!confirmed) return;
     recoverUserAccess(selected.id);
   });
 }
@@ -702,23 +703,23 @@ function recoverUserAccess(id) {
   render();
 }
 
-function changeCurrentUserPassword() {
+async function changeCurrentUserPassword() {
   const user = currentUser();
   if (!user) return;
-  const currentPassword = prompt("Senha atual:");
+  const currentPassword = await appPrompt("Alterar senha", { label: "Senha atual", type: "password" });
   if (currentPassword === null) return;
   if (String(currentPassword) !== String(user.password || "")) {
     showToast("Senha atual incorreta.");
     return;
   }
-  const nextPassword = prompt("Nova senha:");
+  const nextPassword = await appPrompt("Alterar senha", { label: "Nova senha", type: "password" });
   if (nextPassword === null) return;
   const cleanPassword = String(nextPassword).trim();
   if (cleanPassword.length < 4) {
     showToast("A nova senha precisa ter pelo menos 4 caracteres.");
     return;
   }
-  const confirmPassword = prompt("Confirme a nova senha:");
+  const confirmPassword = await appPrompt("Alterar senha", { label: "Confirme a nova senha", type: "password" });
   if (confirmPassword === null) return;
   if (String(confirmPassword).trim() !== cleanPassword) {
     showToast("A confirmacao da senha nao confere.");
@@ -1979,14 +1980,17 @@ function grdCourierOptions(selected = "Michele Buril") {
   return grdCourierNames().map((name) => `<option value="${esc(name)}" ${selected === name ? "selected" : ""}>${esc(name)}</option>`).join("");
 }
 
-function chooseCourier(question, fallback = "Michele Buril") {
+async function chooseCourier(question, fallback = "Michele Buril") {
   const names = grdCourierNames();
-  const message = `${question}\n\nDigite o nome ou numero:\n${names.map((name, index) => `${index + 1}. ${name}`).join("\n")}`;
-  const answer = prompt(message, fallback);
-  if (answer === null) return "";
-  const trimmed = answer.trim();
-  const byNumber = names[Number(trimmed) - 1];
-  return byNumber || trimmed || fallback;
+  const result = await appChoice("Responsavel pela movimentacao", {
+    label: question,
+    options: names.map((name) => ({ value: name, label: name })),
+    value: names.includes(fallback) ? fallback : names[0],
+    allowCustom: true,
+    customLabel: "Outro nome"
+  });
+  if (!result) return "";
+  return result.custom || result.value || fallback;
 }
 
 function parseGrdEntries(text, fallback) {
@@ -4062,15 +4066,15 @@ function scanGrd(id) {
   render();
 }
 
-function archiveGrd(id) {
+async function archiveGrd(id) {
   const item = findGrd(id);
   if (!item) return;
   if (!item.scanned) {
     showToast("Digitalize o GRD antes de mover para concluido.");
     return;
   }
-  const tracked = confirm("Este GRD foi rastreado?");
-  const checked = confirm("Voce fez a conferencia antes de concluir?");
+  const tracked = await appConfirm("Rastreamento", "Este GRD foi rastreado?", { okLabel: "Sim", cancelLabel: "Nao" });
+  const checked = await appConfirm("Conferencia", "Voce fez a conferencia antes de concluir?", { okLabel: "Sim", cancelLabel: "Nao" });
   item.archived = true;
   item.archivedAt = new Date().toISOString();
   item.tracked = tracked;
@@ -4082,12 +4086,17 @@ function archiveGrd(id) {
   render();
 }
 
-function editGrd(id) {
+async function editGrd(id) {
   const item = findGrd(id);
   if (!item) return;
   const oldEntries = normalizeGrdEntries(item);
   const currentEntries = oldEntries.map((entry) => `${stripOsPrefix(entry.os)} | ${entry.testDate || ""} | ${entry.protocol || ""} | ${entry.testType || entry.description || ""} | ${entry.company || item.company || ""}`).join("\n");
-  const entriesText = prompt("Documentos da GRD (Numero da OS | Data do ensaio | Protocolo | Tipo de ensaio | Empresa):", currentEntries);
+  const entriesText = await appPrompt("Editar GRD / inserir OS", {
+    label: "Documentos da GRD",
+    value: currentEntries,
+    textarea: true,
+    help: "Informe uma OS por linha no formato: Numero da OS | Data do ensaio | Protocolo | Tipo de ensaio | Empresa."
+  });
   if (entriesText === null) return;
   const entries = parseGrdEditEntries(entriesText, item).filter((entry) => entry.os && entry.testType && entry.company);
   if (!entries.length) {
@@ -4119,14 +4128,15 @@ function editGrd(id) {
   render();
 }
 
-function deleteGrd(id) {
+async function deleteGrd(id) {
   if (currentUser().role !== "admin") {
     showToast("Somente Michele pode apagar GRD.");
     return;
   }
   const item = findGrd(id);
   if (!item) return;
-  if (!confirm(`Apagar o GRD ${item.os || item.protocol || ""}?`)) return;
+  const confirmed = await appConfirm("Apagar GRD", `Apagar o GRD ${displayGrdCode(item)}?`, { okLabel: "Apagar" });
+  if (!confirmed) return;
   data.grds = (data.grds || []).filter((grd) => grd.id !== id);
   saveData();
   showToast("GRD apagado.");
@@ -4188,7 +4198,7 @@ function updateGrdAfterEntries(item) {
   item.testType = first.testType || item.testType;
 }
 
-function returnSelectedGrdOs(id) {
+async function returnSelectedGrdOs(id) {
   if (currentUser().role !== "admin") {
     showToast("Somente Michele pode voltar ou mover OS do GRD.");
     return;
@@ -4204,7 +4214,11 @@ function returnSelectedGrdOs(id) {
   }
   const labels = { michele: "Michele", marllon: "Marllon", jeferson: "Jeferson" };
   const targetLabel = labels[target] || "Michele";
-  const reason = prompt(`Motivo da movimentacao para ${targetLabel}:`, "Retorno/ajuste de fluxo");
+  const reason = await appPrompt("Mover OS selecionadas", {
+    label: `Motivo da movimentacao para ${targetLabel}`,
+    value: "Retorno/ajuste de fluxo",
+    textarea: true
+  });
   if (reason === null) return;
   const now = new Date().toISOString();
   selected.forEach((entry) => {
@@ -4237,7 +4251,7 @@ function returnSelectedGrdOs(id) {
   render();
 }
 
-function deliverGrd(id, person, mode) {
+async function deliverGrd(id, person, mode) {
   if (currentUser().role !== "admin") {
     showToast("Somente Michele pode registrar entrega.");
     return;
@@ -4249,7 +4263,7 @@ function deliverGrd(id, person, mode) {
   const toStatus = person === "jeferson" ? "awaiting_jeferson_receipt" : "awaiting_marllon_receipt";
   const allowed = person === "jeferson" ? ["validated_marllon"] : ["with_michele", "pending_marllon"];
   const now = new Date().toISOString();
-  const deliveredBy = chooseCourier(`Quem levou para ${target}?`, currentUser().name);
+  const deliveredBy = await chooseCourier(`Quem levou para ${target}?`, currentUser().name);
   if (!deliveredBy) return;
   let count = 0;
   item.entries.forEach((entry) => {
@@ -4316,7 +4330,7 @@ function fillGrdEmailTemplate(template, item, target) {
   return String(template || "").replace(/\{(grd|qtd|data|responsavel|empresas|os|link)\}/g, (_, key) => values[key] ?? "");
 }
 
-function pickupGrdFromDesk(id, person) {
+async function pickupGrdFromDesk(id, person) {
   if (currentUser().role !== "admin") {
     showToast("Somente Michele pode registrar busca na mesa.");
     return;
@@ -4325,7 +4339,7 @@ function pickupGrdFromDesk(id, person) {
   if (!item) return;
   ensureGrdItem(item);
   const target = person === "jeferson" ? "Jeferson" : "Marllon";
-  const pickedUpBy = chooseCourier(`Quem buscou na mesa de ${target}?`, currentUser().name);
+  const pickedUpBy = await chooseCourier(`Quem buscou na mesa de ${target}?`, currentUser().name);
   if (!pickedUpBy) return;
   const statuses = person === "jeferson" ? ["awaiting_jeferson_receipt", "with_jeferson"] : ["awaiting_marllon_receipt", "with_marllon"];
   const now = new Date().toISOString();
@@ -4395,7 +4409,7 @@ function confirmGrdReceipt(id, person, user) {
   render();
 }
 
-function validateSelectedGrdOs(id, person, user) {
+async function validateSelectedGrdOs(id, person, user) {
   const item = findGrd(id);
   if (!item) return;
   ensureGrdItem(item);
@@ -4413,7 +4427,7 @@ function validateSelectedGrdOs(id, person, user) {
     showToast("Selecione OS que estejam com voce para validar.");
     return;
   }
-  const pickedUpBy = chooseCourier(`Quem buscou com ${user.name}?`, "Michele Buril");
+  const pickedUpBy = await chooseCourier(`Quem buscou com ${user.name}?`, "Michele Buril");
   if (!pickedUpBy) return;
   selected.forEach((entry) => {
     entry.status = toStatus;
@@ -4436,7 +4450,7 @@ function validateSelectedGrdOs(id, person, user) {
   render();
 }
 
-function pendSelectedGrdOs(id, person, user) {
+async function pendSelectedGrdOs(id, person, user) {
   const item = findGrd(id);
   if (!item) return;
   ensureGrdItem(item);
@@ -4446,7 +4460,10 @@ function pendSelectedGrdOs(id, person, user) {
     showToast("Somente o aprovador correto pode apontar pendencia.");
     return;
   }
-  const reason = prompt("Motivo da pendencia:");
+  const reason = await appPrompt("Registrar pendencia", {
+    label: "Motivo da pendencia",
+    textarea: true
+  });
   if (!reason) {
     showToast("Informe o motivo da pendencia.");
     return;
@@ -4459,7 +4476,7 @@ function pendSelectedGrdOs(id, person, user) {
     showToast("Selecione OS que estejam com voce para apontar pendencia.");
     return;
   }
-  const pickedUpBy = chooseCourier(`Quem buscou com ${user.name}?`, "Michele Buril");
+  const pickedUpBy = await chooseCourier(`Quem buscou com ${user.name}?`, "Michele Buril");
   if (!pickedUpBy) return;
   selected.forEach((entry) => {
     entry.status = toStatus;
@@ -4514,7 +4531,7 @@ function scanSelectedGrdOs(id) {
   render();
 }
 
-function archiveSelectedGrdOs(id) {
+async function archiveSelectedGrdOs(id) {
   if (currentUser().role !== "admin") {
     showToast("Somente Michele pode concluir OS.");
     return;
@@ -4527,8 +4544,8 @@ function archiveSelectedGrdOs(id) {
     showToast("Selecione OS digitalizadas para arquivar/concluir.");
     return;
   }
-  const tracked = confirm("As OS selecionadas foram rastreadas?");
-  const checked = confirm("Voce fez a conferencia antes de concluir?");
+  const tracked = await appConfirm("Rastreamento", "As OS selecionadas foram rastreadas?", { okLabel: "Sim", cancelLabel: "Nao" });
+  const checked = await appConfirm("Conferencia", "Voce fez a conferencia antes de concluir?", { okLabel: "Sim", cancelLabel: "Nao" });
   const now = new Date().toISOString();
   selected.forEach((entry) => {
     entry.status = "done";
@@ -4598,9 +4615,9 @@ function calculateHours({ dayType, start, breakStart, breakEnd, end }) {
   return { minutes50: 0, minutes100: worked };
 }
 
-function approveItem(scheduleId, itemId, user) {
+async function approveItem(scheduleId, itemId, user) {
   const { schedule, item } = findItem(scheduleId, itemId);
-  const comment = prompt("Comentario opcional de aprovacao:") || "";
+  const comment = await appPrompt("Aprovar HE", { label: "Comentario opcional de aprovacao", textarea: true }) || "";
   applyApproval(schedule, item, user, comment);
   saveData();
   showToast(user.role === "marllon" ? "Aprovado por Marllon. E-mail para Jeferson registrado." : "Aprovado por Jeferson.");
@@ -4621,8 +4638,8 @@ function applyApproval(schedule, item, user, comment = "") {
   }
 }
 
-function rejectItem(scheduleId, itemId, user) {
-  const reason = prompt("Informe o motivo da reprovacao:");
+async function rejectItem(scheduleId, itemId, user) {
+  const reason = await appPrompt("Reprovar HE", { label: "Informe o motivo da reprovacao", textarea: true });
   if (!reason) {
     showToast("Motivo obrigatorio para reprovar.");
     return;
@@ -4638,9 +4655,9 @@ function rejectItem(scheduleId, itemId, user) {
   render();
 }
 
-function approveAll(user) {
+async function approveAll(user) {
   const targetStatus = user.role === "marllon" ? "waiting_marllon" : "waiting_jeferson";
-  const comment = prompt("Comentario opcional para aprovacao em lote:") || "";
+  const comment = await appPrompt("Aprovar em lote", { label: "Comentario opcional para aprovacao em lote", textarea: true }) || "";
   let count = 0;
   data.schedules.forEach((schedule) => {
     schedule.items.filter((item) => item.status === targetStatus).forEach((item) => {
@@ -4653,8 +4670,8 @@ function approveAll(user) {
   render();
 }
 
-function rejectAll(user) {
-  const reason = prompt("Informe o motivo da reprovacao em lote:");
+async function rejectAll(user) {
+  const reason = await appPrompt("Reprovar em lote", { label: "Informe o motivo da reprovacao em lote", textarea: true });
   if (!reason) {
     showToast("Motivo obrigatorio para reprovar.");
     return;
@@ -4688,9 +4705,9 @@ function sendDraft(scheduleId) {
   render();
 }
 
-function fixItem(scheduleId, itemId) {
+async function fixItem(scheduleId, itemId) {
   const { schedule, item } = findItem(scheduleId, itemId);
-  const end = prompt("Nova saida:", item.end);
+  const end = await appPrompt("Corrigir HE", { label: "Nova saida", value: item.end || "", type: "time" });
   if (!end) return;
   item.end = end;
   const calc = calculateHours({ dayType: schedule.dayType, start: item.start, breakStart: item.breakStart, breakEnd: item.breakEnd, end: item.end });
@@ -4709,25 +4726,22 @@ function fixItem(scheduleId, itemId) {
   render();
 }
 
-function editHeItem(scheduleId, itemId) {
+async function editHeItem(scheduleId, itemId) {
   const { schedule, item } = findItem(scheduleId, itemId);
   if (!schedule || !item) return;
-  const employeeName = prompt("Funcionario:", item.employeeName);
-  if (employeeName === null) return;
-  const functionName = prompt("Funcao:", item.functionName);
-  if (functionName === null) return;
-  const start = prompt(schedule.dayType === "workday" ? "Inicio extra:" : "Inicio:", item.start || "");
-  if (start === null) return;
-  let breakStart = item.breakStart || "";
-  let breakEnd = item.breakEnd || "";
-  if (schedule.dayType !== "workday") {
-    breakStart = prompt("Inicio intervalo:", item.breakStart || "");
-    if (breakStart === null) return;
-    breakEnd = prompt("Fim intervalo:", item.breakEnd || "");
-    if (breakEnd === null) return;
-  }
-  const end = prompt(schedule.dayType === "workday" ? "Saida extra:" : "Saida:", item.end || "");
-  if (end === null) return;
+  const fields = [
+    { name: "employeeName", label: "Funcionario", value: item.employeeName || "" },
+    { name: "functionName", label: "Funcao", value: item.functionName || "" },
+    { name: "start", label: schedule.dayType === "workday" ? "Inicio extra" : "Inicio", value: item.start || "", type: "time" },
+    ...(schedule.dayType !== "workday" ? [
+      { name: "breakStart", label: "Inicio intervalo", value: item.breakStart || "", type: "time" },
+      { name: "breakEnd", label: "Fim intervalo", value: item.breakEnd || "", type: "time" }
+    ] : []),
+    { name: "end", label: schedule.dayType === "workday" ? "Saida extra" : "Saida", value: item.end || "", type: "time" }
+  ];
+  const result = await appForm("Editar HE", fields, { okLabel: "Salvar" });
+  if (!result) return;
+  const { employeeName, functionName, start, breakStart = "", breakEnd = "", end } = result;
   item.employeeName = employeeName || item.employeeName;
   item.functionName = functionName || item.functionName;
   item.start = start || "";
@@ -4744,41 +4758,45 @@ function editHeItem(scheduleId, itemId) {
   render();
 }
 
-function editScheduleItem(scheduleId) {
+async function editScheduleItem(scheduleId) {
   const schedule = data.schedules.find((s) => s.id === scheduleId);
   if (!schedule) return;
   if (schedule.items.length === 1) {
-    editHeItem(schedule.id, schedule.items[0].id);
+    await editHeItem(schedule.id, schedule.items[0].id);
     return;
   }
-  const list = schedule.items.map((item, index) => `${index + 1} - ${item.employeeName} (${minutesToHours(item.totalMinutes)})`).join("\n");
-  const selected = Number(prompt(`Qual HE voce quer editar?\n${list}`));
-  if (!selected || selected < 1 || selected > schedule.items.length) return;
-  editHeItem(schedule.id, schedule.items[selected - 1].id);
+  const selected = await appChoice("Editar HE", {
+    label: "Qual HE voce quer editar?",
+    options: schedule.items.map((item) => ({ value: item.id, label: `${item.employeeName} (${minutesToHours(item.totalMinutes)})` }))
+  });
+  if (!selected?.value) return;
+  await editHeItem(schedule.id, selected.value);
 }
 
-function deleteSchedule(id) {
+async function deleteSchedule(id) {
   if (currentUser().role !== "admin") {
     showToast("Somente Michele pode apagar HE.");
     return;
   }
   const schedule = data.schedules.find((item) => item.id === id);
   if (!schedule) return;
-  if (!confirm(`Apagar a HE/programacao de ${formatDate(schedule.date)}?`)) return;
+  const confirmed = await appConfirm("Apagar HE/programacao", `Apagar a HE/programacao de ${formatDate(schedule.date)}?`, { okLabel: "Apagar" });
+  if (!confirmed) return;
   data.schedules = data.schedules.filter((item) => item.id !== id);
   saveData();
   showToast("HE apagada.");
   render();
 }
 
-function deleteHeItem(scheduleId, itemId) {
+async function deleteHeItem(scheduleId, itemId) {
   if (currentUser().role !== "admin") {
     showToast("Somente Michele pode apagar HE.");
     return;
   }
   const { schedule, item } = findItem(scheduleId, itemId);
   if (!schedule || !item) return;
-  if (!confirm(`Apagar HE de ${item.employeeName}?`)) return;
+  const confirmed = await appConfirm("Apagar HE", `Apagar HE de ${item.employeeName}?`, { okLabel: "Apagar" });
+  if (!confirmed) return;
   schedule.items = schedule.items.filter((entry) => entry.id !== itemId);
   if (!schedule.items.length) data.schedules = data.schedules.filter((entry) => entry.id !== scheduleId);
   else schedule.history.push(historyLine(`HE apagada: ${item.employeeName}`));
@@ -4805,15 +4823,16 @@ function toggleCatalog(key, id) {
   render();
 }
 
-function editCatalog(key, id) {
+async function editCatalog(key, id) {
   const item = data[key].find((i) => i.id === id);
-  const name = prompt("Novo nome:", item.name);
-  if (!name) return;
-  item.name = name.trim();
+  const fields = [{ name: "name", label: "Novo nome", value: item.name || "" }];
   if (key === "employees") {
-    const functionName = prompt("Funcao padrao:", item.defaultFunction || "");
-    if (functionName !== null) item.defaultFunction = functionName.trim();
+    fields.push({ name: "defaultFunction", label: "Funcao padrao", value: item.defaultFunction || "" });
   }
+  const result = await appForm("Editar cadastro", fields, { okLabel: "Salvar" });
+  if (!result?.name) return;
+  item.name = result.name.trim();
+  if (key === "employees") item.defaultFunction = String(result.defaultFunction || "").trim();
   saveData();
   render();
 }
@@ -4848,7 +4867,7 @@ function toggleUser(id) {
   render();
 }
 
-function editUser(id) {
+async function editUser(id) {
   if (currentUser().role !== "admin") {
     showToast("Somente Michele pode editar usuarios.");
     return;
@@ -4856,10 +4875,21 @@ function editUser(id) {
   const user = data.users.find((u) => u.id === id);
   if (!user) return;
   const oldEmail = user.email;
-  const name = prompt("Nome do usuario:", user.name || "");
-  if (name === null) return;
-  const email = prompt("E-mail de acesso:", user.email || "");
-  if (email === null) return;
+  const result = await appForm("Editar usuario", [
+    { name: "name", label: "Nome do usuario", value: user.name || "" },
+    { name: "email", label: "E-mail de acesso", value: user.email || "", type: "email" },
+    { name: "password", label: "Senha", value: user.password || "123456", type: "password" },
+    { name: "role", label: "Perfil", value: user.role || "viewer", type: "select", options: [
+      { value: "admin", label: "Administrador" },
+      { value: "marllon", label: "Marllon" },
+      { value: "jeferson", label: "Jeferson" },
+      { value: "viewer", label: "Visualizador" }
+    ] },
+    { name: "functionName", label: "Funcao", value: user.functionName || roleLabel(user.role || "viewer") },
+    { name: "company", label: "Empresa", value: user.company || data.settings.contractor || "" }
+  ], { okLabel: "Salvar" });
+  if (!result) return;
+  const { name, email, password, role, functionName, company } = result;
   const cleanEmail = email.trim();
   if (!cleanEmail) {
     showToast("Informe um e-mail para o usuario.");
@@ -4870,15 +4900,7 @@ function editUser(id) {
     showToast("Este e-mail ja esta em uso por outro usuario.");
     return;
   }
-  const password = prompt("Senha:", user.password || "123456");
-  if (password === null) return;
-  const role = prompt("Perfil (admin, marllon, jeferson ou viewer):", user.role || "viewer");
-  if (role === null) return;
   const cleanRole = ["admin", "marllon", "jeferson", "viewer"].includes(role.trim()) ? role.trim() : "viewer";
-  const functionName = prompt("Funcao:", user.functionName || roleLabel(cleanRole));
-  if (functionName === null) return;
-  const company = prompt("Empresa:", user.company || data.settings.contractor || "");
-  if (company === null) return;
   user.name = name.trim() || user.name;
   user.email = cleanEmail;
   user.password = password.trim() || user.password || "123456";
@@ -5122,20 +5144,34 @@ function exportSchedule(id) {
   downloadCsv(schedule.items.map((item) => flatItem(schedule, item)), `programacao-${schedule.date}.xls`);
 }
 
-function exportScheduleChoice(id) {
-  const option = prompt("Exportar como PDF ou Excel?", "PDF");
-  if (!option) return;
-  if (normalizeText(option).includes("excel") || normalizeText(option).includes("xls")) exportSchedule(id);
+async function exportScheduleChoice(id) {
+  const option = await appChoice("Exportar programacao", {
+    label: "Escolha o formato",
+    options: [
+      { value: "PDF", label: "PDF" },
+      { value: "Excel", label: "Excel" }
+    ],
+    value: "PDF"
+  });
+  if (!option?.value) return;
+  if (normalizeText(option.value).includes("excel") || normalizeText(option.value).includes("xls")) exportSchedule(id);
   else printSchedule(id);
 }
 
-function exportHeItemChoice(scheduleId, itemId) {
+async function exportHeItemChoice(scheduleId, itemId) {
   const { schedule, item } = findItem(scheduleId, itemId);
   if (!schedule || !item) return;
-  const option = prompt("Exportar esta HE como PDF ou Excel?", "PDF");
-  if (!option) return;
+  const option = await appChoice("Exportar HE", {
+    label: "Escolha o formato",
+    options: [
+      { value: "PDF", label: "PDF" },
+      { value: "Excel", label: "Excel" }
+    ],
+    value: "PDF"
+  });
+  if (!option?.value) return;
   const row = { ...item, ...schedule, item };
-  if (normalizeText(option).includes("excel") || normalizeText(option).includes("xls")) {
+  if (normalizeText(option.value).includes("excel") || normalizeText(option.value).includes("xls")) {
     downloadCsv([flatItem(schedule, item)], `he-${schedule.date}-${item.employeeName}.xls`);
     return;
   }
@@ -5359,6 +5395,117 @@ function esc(value) {
     '"': "&quot;",
     "'": "&#039;"
   }[char]));
+}
+
+function closeAppDialog(value) {
+  const overlay = document.querySelector(".app-dialog-overlay");
+  if (!overlay) return;
+  const resolver = overlay._resolveDialog;
+  const result = value === true ? overlay : value;
+  overlay.remove();
+  if (resolver) resolver(result);
+}
+
+function openAppDialog({ title, message = "", body = "", okLabel = "OK", cancelLabel = "Cancelar", danger = false }) {
+  return new Promise((resolve) => {
+    document.querySelector(".app-dialog-overlay")?.remove();
+    const overlay = document.createElement("div");
+    overlay.className = "app-dialog-overlay";
+    overlay._resolveDialog = resolve;
+    overlay.innerHTML = `
+      <section class="app-dialog" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+        <div class="app-dialog-head">
+          <h3>${esc(title)}</h3>
+          <button class="icon-close" type="button" data-dialog-cancel aria-label="Fechar">x</button>
+        </div>
+        ${message ? `<p class="muted">${esc(message)}</p>` : ""}
+        <div class="app-dialog-body">${body}</div>
+        <div class="btn-row app-dialog-actions">
+          <button class="btn" type="button" data-dialog-cancel>${esc(cancelLabel)}</button>
+          <button class="btn ${danger ? "danger" : "primary"}" type="button" data-dialog-ok>${esc(okLabel)}</button>
+        </div>
+      </section>
+    `;
+    document.body.appendChild(overlay);
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay || event.target.closest("[data-dialog-cancel]")) closeAppDialog(null);
+      if (event.target.closest("[data-dialog-ok]")) closeAppDialog(true);
+    });
+    overlay.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeAppDialog(null);
+      if (event.key === "Enter" && event.ctrlKey) closeAppDialog(true);
+    });
+    setTimeout(() => overlay.querySelector("input, textarea, select, button")?.focus(), 0);
+  });
+}
+
+async function appPrompt(title, { label = "", value = "", type = "text", textarea = false, help = "" } = {}) {
+  const fieldId = `dialog-field-${uid()}`;
+  const control = textarea
+    ? `<textarea id="${fieldId}" class="dialog-input">${esc(value)}</textarea>`
+    : `<input id="${fieldId}" class="dialog-input" type="${esc(type)}" value="${esc(value)}" />`;
+  const body = `
+    <div class="field">
+      ${label ? `<label for="${fieldId}">${esc(label)}</label>` : ""}
+      ${control}
+      ${help ? `<small class="muted">${esc(help)}</small>` : ""}
+    </div>
+  `;
+  const ok = await openAppDialog({ title, body, okLabel: "Salvar" });
+  if (!ok) return null;
+  return ok.querySelector(`#${fieldId}`)?.value ?? "";
+}
+
+async function appConfirm(title, message, { okLabel = "Confirmar", cancelLabel = "Cancelar" } = {}) {
+  const result = await openAppDialog({ title, message, okLabel, cancelLabel, danger: /apagar|excluir|remover/i.test(okLabel) });
+  return Boolean(result);
+}
+
+async function appChoice(title, { label = "", options = [], value = "", allowCustom = false, customLabel = "Outro" } = {}) {
+  const selectId = `dialog-select-${uid()}`;
+  const customId = `dialog-custom-${uid()}`;
+  const body = `
+    <div class="field">
+      ${label ? `<label for="${selectId}">${esc(label)}</label>` : ""}
+      <select id="${selectId}" class="dialog-input">
+        ${options.map((option) => `<option value="${esc(option.value)}" ${String(option.value) === String(value) ? "selected" : ""}>${esc(option.label)}</option>`).join("")}
+      </select>
+    </div>
+    ${allowCustom ? `
+      <div class="field">
+        <label for="${customId}">${esc(customLabel)}</label>
+        <input id="${customId}" class="dialog-input" type="text" placeholder="Preencha somente se nao estiver na lista" />
+      </div>
+    ` : ""}
+  `;
+  const ok = await openAppDialog({ title, body, okLabel: "Continuar" });
+  if (!ok) return null;
+  return {
+    value: ok.querySelector(`#${selectId}`)?.value || "",
+    custom: allowCustom ? String(ok.querySelector(`#${customId}`)?.value || "").trim() : ""
+  };
+}
+
+async function appForm(title, fields, { okLabel = "Salvar" } = {}) {
+  const formId = `dialog-form-${uid()}`;
+  const body = `
+    <form id="${formId}" class="dialog-form">
+      ${fields.map((field) => {
+        const id = `${formId}-${field.name}`;
+        const options = field.options || [];
+        const control = field.type === "textarea"
+          ? `<textarea id="${id}" name="${esc(field.name)}" class="dialog-input">${esc(field.value || "")}</textarea>`
+          : field.type === "select"
+            ? `<select id="${id}" name="${esc(field.name)}" class="dialog-input">${options.map((option) => `<option value="${esc(option.value)}" ${String(option.value) === String(field.value) ? "selected" : ""}>${esc(option.label)}</option>`).join("")}</select>`
+            : `<input id="${id}" name="${esc(field.name)}" class="dialog-input" type="${esc(field.type || "text")}" value="${esc(field.value || "")}" />`;
+        return `<div class="field"><label for="${id}">${esc(field.label)}</label>${control}</div>`;
+      }).join("")}
+    </form>
+  `;
+  const ok = await openAppDialog({ title, body, okLabel });
+  if (!ok) return null;
+  const form = ok.querySelector(`#${formId}`);
+  return Object.fromEntries(new FormData(form).entries());
 }
 
 function showToast(message) {
