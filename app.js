@@ -171,7 +171,11 @@ const defaultData = {
     jefersonEmail: "jeferson@empresa.com",
     grdEmailSubject: "GRD {grd} aguardando assinatura",
     grdEmailBodyMarllon: "Ola Marllon,\n\nO GRD {grd} esta com {qtd} OS aguardando sua validacao/assinatura.\nEmpresas: {empresas}\nOS: {os}\nAcesse: {link}\n\nA guia A4 fica disponivel no botao Imprimir A4 dentro do GRD.\n\nObrigada.",
-    grdEmailBodyJeferson: "Ola Jeferson,\n\nO GRD {grd} esta com {qtd} OS aguardando sua validacao/assinatura.\nEmpresas: {empresas}\nOS: {os}\nAcesse: {link}\n\nA guia A4 fica disponivel no botao Imprimir A4 dentro do GRD.\n\nObrigada."
+    grdEmailBodyJeferson: "Ola Jeferson,\n\nO GRD {grd} esta com {qtd} OS aguardando sua validacao/assinatura.\nEmpresas: {empresas}\nOS: {os}\nAcesse: {link}\n\nA guia A4 fica disponivel no botao Imprimir A4 dentro do GRD.\n\nObrigada.",
+    grdEmailFont: "Calibri",
+    grdEmailFontSize: "12",
+    grdEmailColor: "#000000",
+    grdEmailBold: "false"
   },
   users: [
     { id: uid(), name: "Michele Buril", email: "michele@empresa.com", password: "123456", role: "admin", active: true },
@@ -457,10 +461,7 @@ function normalizeRoleAccess(savedAccess) {
 
 function mergeConfigRows(defaultRows, savedRows) {
   const rows = (savedRows || []).map((row) => ({ ...row }));
-  const keys = new Set(rows.map((row) => row.id));
-  defaultRows.forEach((row) => {
-    if (!keys.has(row.id)) rows.push({ ...row });
-  });
+  if (!Array.isArray(savedRows)) return (defaultRows || []).map((row) => ({ ...row }));
   return rows;
 }
 
@@ -471,10 +472,9 @@ function mergeNavItems(savedRows) {
     const current = byKey.get(row.key);
     if (!current) rows.push({ ...row });
     else {
-      current.order = row.order;
-      if (["heDashboard", "waterDashboard", "schedules"].includes(row.key)) current.visible = false;
-      if (row.key === "micheleAccess") current.visible = true;
+      current.order = Number(current.order || row.order);
       if (!current.label) current.label = row.label;
+      if (typeof current.visible === "undefined") current.visible = row.visible;
     }
   });
   return rows;
@@ -752,7 +752,15 @@ function renderApp(user) {
         </div>
       </aside>
       <section class="main">
-        <header class="top-actions"><button class="icon-btn" title="Tema">${renderIcon(data.settings.topActionIcon1 || "☼")}</button>${userAvatar(user, "top-avatar")}<span class="top-caret">⌄</span></header>
+        <header class="top-actions">
+          <button class="icon-btn" title="Tema">${renderIcon(data.settings.topActionIcon1 || "☼")}</button>
+          <button class="user-menu-trigger" id="userMenuBtn" type="button">${userAvatar(user, "top-avatar")}<span class="top-caret">⌄</span></button>
+          <div class="user-menu hidden-field" id="userMenu">
+            <button type="button" data-action="openView" data-view="settings">Configurações</button>
+            <button type="button" id="menuPasswordBtn">Alterar senha</button>
+            <button type="button" id="menuLogoutBtn">Sair</button>
+          </div>
+        </header>
         <div class="content" id="view"></div>
       </section>
     </main>
@@ -769,6 +777,15 @@ function renderApp(user) {
     render();
   });
   document.getElementById("changePasswordBtn")?.addEventListener("click", () => changeCurrentUserPassword());
+  document.getElementById("userMenuBtn")?.addEventListener("click", () => {
+    document.getElementById("userMenu")?.classList.toggle("hidden-field");
+  });
+  document.getElementById("menuPasswordBtn")?.addEventListener("click", () => changeCurrentUserPassword());
+  document.getElementById("menuLogoutBtn")?.addEventListener("click", () => {
+    data.sessionEmail = "";
+    saveData();
+    render();
+  });
   document.querySelector(".top-actions .icon-btn")?.addEventListener("click", () => toggleTheme());
   renderView(user);
 }
@@ -2240,7 +2257,7 @@ function renderGrdViewer() {
       <div><h1>Guia GRD</h1><p>${entries.length} OS - ${companies.length > 1 ? "empresas variadas" : esc(companies[0] || item.company || "sem empresa")}</p></div>
       <div class="btn-row">
         <button class="btn" data-action="openView" data-view="grdDashboard">Voltar</button>
-        ${currentUser().role === "admin" ? `<button class="btn" data-action="editGrd" data-id="${item.id}">Editar GRD</button>` : ""}
+        ${currentUser().role === "admin" ? `<button class="btn" data-action="editGrd" data-id="${item.id}">Editar GRD / inserir OS</button>` : ""}
         ${currentUser().role === "admin" ? `<button class="btn danger" data-action="deleteGrd" data-id="${item.id}">Apagar GRD</button>` : ""}
         <button class="btn primary" data-action="printGrd">Imprimir A4</button>
       </div>
@@ -2268,6 +2285,19 @@ function renderGrdOsWorkPanel(item) {
         <div><h3>OS do GRD</h3><span class="muted">Selecione todas ou apenas algumas para validar, apontar pendencia, digitalizar ou concluir.</span></div>
         <div class="btn-row"><button class="btn" data-action="selectAllGrdOs">Selecionar todas</button></div>
       </div>
+      ${canAdmin ? `
+        <div class="grd-return-panel">
+          <div class="field">
+            <label>Mover OS selecionadas para</label>
+            <select id="grdReturnTarget">
+              <option value="michele">Michele</option>
+              <option value="marllon">Marllon</option>
+              <option value="jeferson">Jeferson</option>
+            </select>
+          </div>
+          <button class="btn warning" data-action="returnSelectedGrdOs" data-id="${item.id}">Mover selecionadas</button>
+        </div>
+      ` : ""}
       <div class="table-wrap no-x-scroll">
         <table class="grd-os-table grd-work-table">
           <thead><tr><th><input type="checkbox" data-action="toggleAllGrdOs" title="Selecionar todas"></th><th>OS</th><th>Data ensaio</th><th>Empresa</th><th>Protocolo</th><th>Tipo</th><th>Responsavel</th><th>Status atual</th></tr></thead>
@@ -2299,19 +2329,6 @@ function renderGrdOsWorkPanel(item) {
         ${role === "admin" && hasToScan ? `<button class="btn" data-action="scanSelectedGrdOs" data-id="${item.id}">Marcar digitalizadas</button>` : ""}
         ${role === "admin" && hasToArchive ? `<button class="btn success" data-action="archiveSelectedGrdOs" data-id="${item.id}">Arquivar/concluir selecionadas</button>` : ""}
       </div>
-      ${canAdmin ? `
-        <div class="grd-return-panel">
-          <div class="field">
-            <label>Voltar/mover OS selecionadas para</label>
-            <select id="grdReturnTarget">
-              <option value="michele">Michele</option>
-              <option value="marllon">Marllon</option>
-              <option value="jeferson">Jeferson</option>
-            </select>
-          </div>
-          <button class="btn warning" data-action="returnSelectedGrdOs" data-id="${item.id}">Mover selecionadas</button>
-        </div>
-      ` : ""}
       <div class="grd-history-panel">
         <h3>Historico do GRD</h3>
         ${renderGrdHistory(item)}
@@ -3105,15 +3122,19 @@ function renderSettings() {
           ${input("marllonEmail", "E-mail Marllon", s.marllonEmail, "", "email")}
           ${input("jefersonEmail", "E-mail Jeferson", s.jefersonEmail, "", "email")}
           ${input("grdEmailSubject", "Assunto do e-mail GRD", s.grdEmailSubject, "", "text")}
+          ${input("grdEmailFont", "Fonte do e-mail", s.grdEmailFont || "Calibri", "", "text")}
+          ${input("grdEmailFontSize", "Tamanho da fonte", s.grdEmailFontSize || "12", "", "number")}
+          <div class="field"><label>Cor do texto</label><input name="grdEmailColor" type="color" value="${esc(s.grdEmailColor || "#000000")}"></div>
+          <div class="field"><label>Texto em negrito</label><select name="grdEmailBold"><option value="false" ${s.grdEmailBold !== "true" ? "selected" : ""}>Nao</option><option value="true" ${s.grdEmailBold === "true" ? "selected" : ""}>Sim</option></select></div>
           <div class="field full email-template-field">
             <label>Corpo do e-mail para Marllon</label>
             <textarea name="grdEmailBodyMarllon" placeholder="Escreva o texto com as quebras de linha desejadas.">${esc(s.grdEmailBodyMarllon)}</textarea>
-            <span class="field-help">Pode dar Enter para separar frases e parágrafos. Campos disponíveis: {grd}, {qtd}, {empresas}, {os}, {link}.</span>
+            <span class="field-help">Pode dar Enter para separar frases e paragrafos. Para negrito no Outlook/Gmail, use **texto** no modelo. Campos: {grd}, {qtd}, {empresas}, {os}, {link}.</span>
           </div>
           <div class="field full email-template-field">
             <label>Corpo do e-mail para Jeferson</label>
             <textarea name="grdEmailBodyJeferson" placeholder="Escreva o texto com as quebras de linha desejadas.">${esc(s.grdEmailBodyJeferson)}</textarea>
-            <span class="field-help">Pode dar Enter para separar frases e parágrafos. Campos disponíveis: {grd}, {qtd}, {empresas}, {os}, {link}.</span>
+            <span class="field-help">Pode dar Enter para separar frases e paragrafos. Para negrito no Outlook/Gmail, use **texto** no modelo. Campos: {grd}, {qtd}, {empresas}, {os}, {link}.</span>
           </div>
         </div>
       </section>
@@ -4927,6 +4948,10 @@ function saveSettings(fd) {
     "grdEmailSubject",
     "grdEmailBodyMarllon",
     "grdEmailBodyJeferson",
+    "grdEmailFont",
+    "grdEmailFontSize",
+    "grdEmailColor",
+    "grdEmailBold",
     "homeSummaryTitle",
     "homeSummaryMode",
     "recentTitle",
@@ -4990,8 +5015,6 @@ function saveSettings(fd) {
     row.dataset.role,
     [...row.querySelectorAll('[name="roleAccessView"]:checked')].map((input) => input.value)
   ])));
-  const settingsItem = data.settings.navItems.find((item) => item.key === "settings");
-  if (settingsItem) settingsItem.visible = true;
   saveData();
   if (hasCloudConfig()) {
     pushCloudData().then(() => startCloudPolling()).catch(() => showToast("Configuracoes salvas localmente, mas nao foi possivel enviar para a base online."));
