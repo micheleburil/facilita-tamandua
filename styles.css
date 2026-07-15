@@ -1001,6 +1001,22 @@ th {
   margin-top: 14px;
 }
 
+.grd-return-panel {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) auto;
+  gap: 12px;
+  align-items: end;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.grd-return-panel .btn {
+  width: fit-content;
+}
+
 .grd-location-radar {
   margin-top: 16px;
 }
