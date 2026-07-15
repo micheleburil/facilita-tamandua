@@ -702,6 +702,33 @@ function recoverUserAccess(id) {
   render();
 }
 
+function changeCurrentUserPassword() {
+  const user = currentUser();
+  if (!user) return;
+  const currentPassword = prompt("Senha atual:");
+  if (currentPassword === null) return;
+  if (String(currentPassword) !== String(user.password || "")) {
+    showToast("Senha atual incorreta.");
+    return;
+  }
+  const nextPassword = prompt("Nova senha:");
+  if (nextPassword === null) return;
+  const cleanPassword = String(nextPassword).trim();
+  if (cleanPassword.length < 4) {
+    showToast("A nova senha precisa ter pelo menos 4 caracteres.");
+    return;
+  }
+  const confirmPassword = prompt("Confirme a nova senha:");
+  if (confirmPassword === null) return;
+  if (String(confirmPassword).trim() !== cleanPassword) {
+    showToast("A confirmacao da senha nao confere.");
+    return;
+  }
+  user.password = cleanPassword;
+  saveData();
+  showToast("Senha alterada com sucesso.");
+}
+
 function renderApp(user) {
   const defaultNavItems = defaultData.settings.navItems;
   const views = (data.settings.navItems || defaultNavItems)
@@ -721,7 +748,7 @@ function renderApp(user) {
         </nav>
         <div class="user-box">
           ${userAvatar(user)}
-          <div><strong>${esc(user.name)}</strong><br><small>${roleLabel(user.role)}</small><br><button class="link-btn" id="logoutBtn">Sair</button></div>
+          <div><strong>${esc(user.name)}</strong><br><small>${roleLabel(user.role)}</small><br><button class="link-btn" id="changePasswordBtn">Alterar senha</button><br><button class="link-btn" id="logoutBtn">Sair</button></div>
         </div>
       </aside>
       <section class="main">
@@ -741,6 +768,7 @@ function renderApp(user) {
     saveData();
     render();
   });
+  document.getElementById("changePasswordBtn")?.addEventListener("click", () => changeCurrentUserPassword());
   document.querySelector(".top-actions .icon-btn")?.addEventListener("click", () => toggleTheme());
   renderView(user);
 }
@@ -2271,6 +2299,19 @@ function renderGrdOsWorkPanel(item) {
         ${role === "admin" && hasToScan ? `<button class="btn" data-action="scanSelectedGrdOs" data-id="${item.id}">Marcar digitalizadas</button>` : ""}
         ${role === "admin" && hasToArchive ? `<button class="btn success" data-action="archiveSelectedGrdOs" data-id="${item.id}">Arquivar/concluir selecionadas</button>` : ""}
       </div>
+      ${canAdmin ? `
+        <div class="grd-return-panel">
+          <div class="field">
+            <label>Voltar/mover OS selecionadas para</label>
+            <select id="grdReturnTarget">
+              <option value="michele">Michele</option>
+              <option value="marllon">Marllon</option>
+              <option value="jeferson">Jeferson</option>
+            </select>
+          </div>
+          <button class="btn warning" data-action="returnSelectedGrdOs" data-id="${item.id}">Mover selecionadas</button>
+        </div>
+      ` : ""}
       <div class="grd-history-panel">
         <h3>Historico do GRD</h3>
         ${renderGrdHistory(item)}
@@ -3755,6 +3796,7 @@ function handleAction(event, action, dataset, user) {
   if (action === "pendSelectedGrdOs") pendSelectedGrdOs(dataset.id, dataset.person, user);
   if (action === "scanSelectedGrdOs") scanSelectedGrdOs(dataset.id);
   if (action === "archiveSelectedGrdOs") archiveSelectedGrdOs(dataset.id);
+  if (action === "returnSelectedGrdOs") returnSelectedGrdOs(dataset.id);
   if (action === "selectAllGrdOs") selectAllGrdOs();
   if (action === "toggleAllGrdOs") toggleAllGrdOs(event.target.checked);
   if (action === "sendGrdEmail") sendGrdEmail(dataset.id, dataset.person);
@@ -4112,6 +4154,10 @@ function selectedOrAllEntries(item, allowedStatuses = []) {
   return allowedStatuses.length ? chosen.filter((entry) => allowedStatuses.includes(entry.status)) : chosen;
 }
 
+function movableGrdEntries(item) {
+  return selectedOrAllEntries(item).filter((entry) => !["done", "archived"].includes(entry.status));
+}
+
 function updateGrdAfterEntries(item) {
   item.quantity = item.entries.length;
   item.status = aggregateGrdStatus(item);
@@ -4119,6 +4165,55 @@ function updateGrdAfterEntries(item) {
   item.os = first.os || item.os;
   item.protocol = first.protocol || item.protocol;
   item.testType = first.testType || item.testType;
+}
+
+function returnSelectedGrdOs(id) {
+  if (currentUser().role !== "admin") {
+    showToast("Somente Michele pode voltar ou mover OS do GRD.");
+    return;
+  }
+  const item = findGrd(id);
+  if (!item) return;
+  ensureGrdItem(item);
+  const target = document.getElementById("grdReturnTarget")?.value || "michele";
+  const selected = movableGrdEntries(item);
+  if (!selected.length) {
+    showToast("Selecione OS que ainda estejam em fluxo para mover.");
+    return;
+  }
+  const labels = { michele: "Michele", marllon: "Marllon", jeferson: "Jeferson" };
+  const targetLabel = labels[target] || "Michele";
+  const reason = prompt(`Motivo da movimentacao para ${targetLabel}:`, "Retorno/ajuste de fluxo");
+  if (reason === null) return;
+  const now = new Date().toISOString();
+  selected.forEach((entry) => {
+    if (target === "marllon") {
+      entry.status = "awaiting_marllon_receipt";
+      entry.currentHolder = "Marllon";
+      entry.locationNote = `Movido para Marllon por ${currentUser().name}`;
+      entry.marllonDeliveredAt = now;
+    } else if (target === "jeferson") {
+      entry.status = "awaiting_jeferson_receipt";
+      entry.currentHolder = "Jeferson";
+      entry.locationNote = `Movido para Jeferson por ${currentUser().name}`;
+      entry.jefersonDeliveredAt = now;
+    } else {
+      entry.status = "with_michele";
+      entry.currentHolder = "Michele";
+      entry.locationNote = `Retornado para Michele por ${currentUser().name}`;
+    }
+    entry.returnedManuallyAt = now;
+    entry.returnedManuallyTo = targetLabel;
+    entry.pendingReason = "";
+    entry.history = entry.history || [];
+    entry.history.push(historyLine(`${entry.os} movida para ${targetLabel}. Motivo: ${reason || "nao informado"}`));
+  });
+  item.history = item.history || [];
+  item.history.push(historyLine(`${selected.length} OS movida(s) para ${targetLabel}. Motivo: ${reason || "nao informado"}`));
+  updateGrdAfterEntries(item);
+  saveData();
+  showToast(`${selected.length} OS movida(s) para ${targetLabel}.`);
+  render();
 }
 
 function deliverGrd(id, person, mode) {
