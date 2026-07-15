@@ -1,4 +1,4 @@
-const CACHE_NAME = "facilita-grd-retorno-senha-20260715";
+const CACHE_NAME = "facilita-config-acessos-menu-20260715";
 const ASSETS = [
   "./",
   "./index.html",
